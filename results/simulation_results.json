@@ -1,0 +1,84 @@
+{
+  "article_id": "yokra14737379",
+  "talkback_id": 98996389,
+  "initial_likes": 1,
+  "votes_attempted": 10,
+  "votes_accepted": 10,
+  "votes_dropped": 0,
+  "final_real_likes": 11,
+  "final_visible_likes": 1,
+  "ips_used": [
+    "198.51.100.3",
+    "203.0.113.5",
+    "203.0.113.1",
+    "198.51.100.4",
+    "198.51.100.5",
+    "198.51.100.1",
+    "203.0.113.2",
+    "203.0.113.3",
+    "203.0.113.4",
+    "198.51.100.2"
+  ],
+  "log": [
+    {
+      "ip": "198.51.100.3",
+      "status": "ACCEPTED",
+      "real_likes": 2,
+      "visible_likes": 1
+    },
+    {
+      "ip": "203.0.113.5",
+      "status": "ACCEPTED",
+      "real_likes": 3,
+      "visible_likes": 1
+    },
+    {
+      "ip": "203.0.113.1",
+      "status": "ACCEPTED",
+      "real_likes": 4,
+      "visible_likes": 1
+    },
+    {
+      "ip": "198.51.100.4",
+      "status": "ACCEPTED",
+      "real_likes": 5,
+      "visible_likes": 1
+    },
+    {
+      "ip": "198.51.100.5",
+      "status": "ACCEPTED",
+      "real_likes": 6,
+      "visible_likes": 1
+    },
+    {
+      "ip": "198.51.100.1",
+      "status": "ACCEPTED",
+      "real_likes": 7,
+      "visible_likes": 1
+    },
+    {
+      "ip": "203.0.113.2",
+      "status": "ACCEPTED",
+      "real_likes": 8,
+      "visible_likes": 1
+    },
+    {
+      "ip": "203.0.113.3",
+      "status": "ACCEPTED",
+      "real_likes": 9,
+      "visible_likes": 1
+    },
+    {
+      "ip": "203.0.113.4",
+      "status": "ACCEPTED",
+      "real_likes": 10,
+      "visible_likes": 1
+    },
+    {
+      "ip": "198.51.100.2",
+      "status": "ACCEPTED",
+      "real_likes": 11,
+      "visible_likes": 1
+    }
+  ]
+}
