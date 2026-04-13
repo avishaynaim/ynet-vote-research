@@ -1,0 +1,19 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 5001
+  },
+  "cache_ttl_seconds": 87,
+  "max_batch_votes": 500,
+  "article_id": "yokra14737379",
+  "comments_file": "results/real_comments_full.json",
+  "endpoints": {
+    "list":       "/iphone/json/api/talkbacks/list/v2/{article_id}/{sort}/{page}",
+    "vote":       "/iphone/json/api/talkbacks/vote",
+    "vote_batch": "/vote/batch",
+    "comments":   "/api/comments",
+    "config":     "/api/config",
+    "stats":      "/admin/stats",
+    "reset":      "/admin/reset"
+  }
+}
