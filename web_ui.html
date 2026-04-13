@@ -193,11 +193,11 @@
   <input type="text" id="serverUrl" placeholder="http://127.0.0.1:5001"
          onkeydown="if(event.key==='Enter') connect()">
   <button class="btn-sm btn-connect" onclick="connect()">Connect</button>
+  <button class="btn-sm" style="background:var(--card);color:var(--muted);border:1px solid var(--border)"
+          onclick="document.getElementById('serverUrl').value='';document.getElementById('serverUrl').focus()">Clear</button>
+  <button class="btn-sm" style="background:var(--card);color:var(--muted);border:1px solid var(--border)"
+          onclick="document.getElementById('serverUrl').value='https://www.ynet.co.il';connect()">Ynet Live</button>
   <span class="server-info" id="serverInfo">Not connected</span>
-  <label>Article ID</label>
-  <input type="text" id="articleId" placeholder="yokra14737379" style="max-width:180px"
-         onkeydown="if(event.key==='Enter') loadComments()">
-  <button class="btn-sm btn-connect" onclick="loadComments()">Load</button>
 </div>
 
 <!-- ══ Layout ═══════════════════════════════════════════════════════════ -->
@@ -248,8 +248,6 @@
       <div class="result-row"><span class="rl">Lift</span><span class="rv" id="rLift">—</span></div>
     </div>
 
-    <button class="btn-full" onclick="resetVotes()">↺ Reset all votes to original</button>
-
     <div class="log-wrap">
       <div class="log-head">
         Activity Log
@@ -287,31 +285,45 @@
 // ═══════════════════════════════════════════════════════════════════════════
 //  CONFIG — everything lives here, nothing is hardcoded elsewhere in the file
 // ═══════════════════════════════════════════════════════════════════════════
-const Config = {
-  // Loaded from localStorage or set by user — the ONLY place we store the URL
-  serverUrl:  localStorage.getItem('serverUrl')  || 'http://127.0.0.1:5001',
-  articleId:  localStorage.getItem('articleId')  || '',
-  maxVotes:   500,    // overwritten by server's /api/config
+const PROXY_BASE  = 'http://127.0.0.1:5001/proxy';
+const YNET_ORIGIN = 'https://www.ynet.co.il';
 
-  // Endpoint templates — overwritten when server responds with its own /api/config
+const Config = {
+  // What the user typed / sees — may be the real Ynet URL
+  serverUrl:  'https://www.ynet.co.il',
+  articleId:  'yokra14737379',
+  maxVotes:   500,
+
   endpoints: {
-    config:     '/api/config',
-    comments:   '/api/comments',
-    voteBatch:  '/vote/batch',
-    vote:       '/iphone/json/api/talkbacks/vote',
-    stats:      '/admin/stats',
-    reset:      '/admin/reset',
+    comments:  '/api/comments',
+    voteBatch: '/vote/batch',
+    vote:      '/iphone/json/api/talkbacks/vote',
+  },
+
+  // True when the user-supplied URL points at the real Ynet
+  get isLive() {
+    return this.serverUrl.replace(/\/$/, '') === YNET_ORIGIN;
+  },
+
+  // Actual base used for requests — transparently swap in proxy when live
+  get apiBase() {
+    return this.isLive ? PROXY_BASE : this.serverUrl.replace(/\/$/, '');
   },
 
   save() {
-    localStorage.setItem('serverUrl', this.serverUrl);
-    localStorage.setItem('articleId', this.articleId);
+    // intentionally not persisting serverUrl — always start from real Ynet
   },
 
   url(key, params = {}) {
     let path = this.endpoints[key] || key;
-    Object.entries(params).forEach(([k,v]) => { path = path.replace(`{${k}}`, v); });
-    return this.serverUrl.replace(/\/$/, '') + path;
+    const qs = {};
+    Object.entries(params).forEach(([k, v]) => {
+      const replaced = path.replace(`{${k}}`, v);
+      if (replaced !== path) path = replaced;
+      else qs[k] = v;
+    });
+    const query = Object.keys(qs).length ? '?' + new URLSearchParams(qs).toString() : '';
+    return this.apiBase + path + query;
   }
 };
 
@@ -351,36 +363,25 @@ const API = {
 // ═══════════════════════════════════════════════════════════════════════════
 async function connect() {
   const urlInput = document.getElementById('serverUrl').value.trim();
-  const artInput = document.getElementById('articleId').value.trim();
-
   if (urlInput) { Config.serverUrl = urlInput; }
-  if (artInput) { Config.articleId = artInput; }
 
   document.getElementById('serverUrl').classList.remove('error');
   document.getElementById('serverInfo').textContent = 'Connecting…';
   setConnected(false);
 
   try {
-    // Fetch server config — this is the SINGLE source of truth for endpoints
-    const cfg = await API.get('config');
+    const probe = await fetch(Config.url('comments', { article_id: Config.articleId }), { method: 'GET' });
+    if (!probe.ok) throw new Error(`HTTP ${probe.status}`);
 
-    // Overwrite endpoints from server response
-    if (cfg.endpoints) {
-      Object.assign(Config.endpoints, cfg.endpoints);
-    }
-    if (cfg.max_batch)  Config.maxVotes   = cfg.max_batch;
-    if (!Config.articleId && cfg.article_id) Config.articleId = cfg.article_id;
-
-    // Update slider max
-    document.getElementById('slider').max      = Config.maxVotes;
-    document.getElementById('countInput').max  = Config.maxVotes;
+    document.getElementById('slider').max     = Config.maxVotes;
+    document.getElementById('countInput').max = Config.maxVotes;
 
     Config.save();
     setConnected(true);
 
-    document.getElementById('serverInfo').textContent =
-      `${Config.serverUrl}  ·  cache ${cfg.cache_ttl}s  ·  max batch ${cfg.max_batch}`;
-    document.getElementById('articleId').value   = Config.articleId;
+    document.getElementById('serverInfo').textContent    = Config.isLive
+      ? `${YNET_ORIGIN}  ·  live (via proxy)`
+      : Config.serverUrl;
     document.getElementById('headerArticle').textContent = Config.articleId;
 
     await loadComments();
@@ -388,11 +389,18 @@ async function connect() {
 
   } catch(e) {
     document.getElementById('serverUrl').classList.add('error');
-    document.getElementById('serverInfo').textContent = `Error: ${e.message}`;
-    addLog('sys', `Connection failed: ${e.message}`);
-    showError(`Cannot reach server at <code>${Config.serverUrl}</code><br>
-      Make sure the mock server is running:<br>
-      <code>python3 mock_server.py</code>`);
+    const isTypeError = e instanceof TypeError;
+    const msg = isTypeError
+      ? `Failed to fetch — server unreachable or blocked by CORS`
+      : e.message;
+    document.getElementById('serverInfo').textContent = `Error: ${msg}`;
+    addLog('sys', `Connection failed: ${msg}`);
+    showError(
+      `Cannot connect to <code>${Config.serverUrl}</code><br><br>` +
+      (isTypeError
+        ? `Network error or CORS block. If using the Ynet Live URL, the browser cannot call the real API directly.<br>Use the mock server instead: <code>python3 mock_server.py</code>`
+        : `Server returned: ${msg}`)
+    );
   }
 }
 
@@ -407,9 +415,7 @@ function setConnected(ok) {
 //  COMMENTS
 // ═══════════════════════════════════════════════════════════════════════════
 async function loadComments() {
-  const artInput = document.getElementById('articleId').value.trim();
-  if (artInput) { Config.articleId = artInput; Config.save(); }
-  document.getElementById('headerArticle').textContent = Config.articleId || '—';
+  document.getElementById('headerArticle').textContent = Config.articleId;
 
   try {
     const data = await API.get('comments', { article_id: Config.articleId });
@@ -539,6 +545,8 @@ async function vote(like) {
   }, 100);
 
   try {
+    const before = c ? { likes: c.likes, unlikes: c.unlikes } : { likes: 0, unlikes: 0 };
+
     const data = await API.post('voteBatch', {
       article_id:  Config.articleId,
       talkback_id: State.selectedId,
@@ -548,26 +556,29 @@ async function vote(like) {
 
     clearInterval(ticker);
     pb.style.width = '100%';
-    pl.textContent = `Done — ${data.accepted} accepted / ${data.dropped} dropped`;
+    pl.textContent = `Sent ${data.sent} votes — refreshing…`;
 
-    // Show result
-    const lift = like
-      ? data.after.likes   - data.before.likes
-      : data.after.unlikes - data.before.unlikes;
+    await loadComments();
 
-    document.getElementById('rCount').textContent    = count;
-    document.getElementById('rAccepted').textContent = data.accepted;
-    document.getElementById('rDropped').textContent  = data.dropped;
-    document.getElementById('rBefore').textContent   = `👍 ${data.before.likes}  👎 ${data.before.unlikes}`;
-    document.getElementById('rAfter').textContent    = `👍 ${data.after.likes}  👎 ${data.after.unlikes}`;
+    const after = State.comments.find(x => x.id === State.selectedId)
+                  || { likes: before.likes, unlikes: before.unlikes };
+    const lift  = like
+      ? after.likes   - before.likes
+      : after.unlikes - before.unlikes;
+
+    document.getElementById('rCount').textContent    = data.sent;
+    document.getElementById('rAccepted').textContent = data.ok;
+    document.getElementById('rDropped').textContent  = data.errors;
+    document.getElementById('rBefore').textContent   = `👍 ${before.likes}  👎 ${before.unlikes}`;
+    document.getElementById('rAfter').textContent    = `👍 ${after.likes}  👎 ${after.unlikes}`;
     document.getElementById('rLift').innerHTML =
-      `<span class="lift-badge ${lift >= 0 ? 'lift-pos' : 'lift-neg'}">${lift >= 0 ? '+' : ''}${lift} ${like ? 'likes' : 'dislikes'}</span>`;
+      `<span class="lift-badge ${lift > 0 ? 'lift-pos' : lift < 0 ? 'lift-neg' : ''}">`+
+      `${lift >= 0 ? '+' : ''}${lift} ${like ? 'likes' : 'dislikes'}`+
+      `${lift === 0 ? ' (CDN cache — check in ~87s)' : ''}</span>`;
     document.getElementById('resultBox').classList.add('show');
 
     addLog(like ? 'like' : 'dislike',
-      `${c?.author || '#'+State.selectedId} — ${count} votes → +${data.accepted} (lift ${lift >= 0 ? '+' : ''}${lift})`);
-
-    await loadComments();
+      `${c?.author || '#'+State.selectedId} — ${count} sent → lift ${lift >= 0 ? '+' : ''}${lift}`);
 
     // Flash updated card
     const card = document.getElementById(`card-${State.selectedId}`);
@@ -606,21 +617,6 @@ function setSort(key, btn) {
   document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   renderComments();
-}
-
-async function resetVotes() {
-  if (!confirm('Reset all votes to original values?')) return;
-  try {
-    await API.post('reset', { article_id: Config.articleId });
-    State.selectedId = null;
-    document.getElementById('selectedBox').className = 'selected-box empty';
-    document.getElementById('selectedBox').textContent = '← select a comment from the list';
-    document.getElementById('btnLike').disabled    = true;
-    document.getElementById('btnDislike').disabled = true;
-    document.getElementById('resultBox').classList.remove('show');
-    addLog('sys', 'All votes reset to original');
-    await loadComments();
-  } catch(e) { addLog('sys', `Reset failed: ${e.message}`); }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -667,9 +663,11 @@ function showError(html) {
 //  INIT
 // ═══════════════════════════════════════════════════════════════════════════
 (function init() {
-  // Restore saved values into inputs
+  // Clear any stale serverUrl from localStorage — always start from real Ynet
+  localStorage.removeItem('serverUrl');
+  localStorage.removeItem('articleId');
+
   document.getElementById('serverUrl').value = Config.serverUrl;
-  document.getElementById('articleId').value = Config.articleId;
 
   // Auto-connect on load
   connect();

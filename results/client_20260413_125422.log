@@ -1,0 +1,21 @@
+2026-04-13 12:54:22.413  INFO     client                === Ynet Vote Rotation Client starting ===
+2026-04-13 12:54:22.413  INFO     client                Config    : /root/ynet-vote-research/config.json
+2026-04-13 12:54:22.413  INFO     client                Server    : http://httpbin.org
+2026-04-13 12:54:22.414  INFO     client                Article   : yokra14737379
+2026-04-13 12:54:22.414  INFO     client                Pool size : 50
+2026-04-13 12:54:22.414  INFO     client                Vote URL  : http://httpbin.org/iphone/json/api/talkbacks/vote
+2026-04-13 12:54:22.414  INFO     client                List URL  : http://httpbin.org/iphone/json/api/talkbacks/list/v2/yokra14737379/0/1
+2026-04-13 12:54:22.414  INFO     client                Stats URL : http://httpbin.org/admin/stats
+2026-04-13 12:54:22.414  INFO     client                Log file  : /root/ynet-vote-research/results/client_20260413_125422.log
+2026-04-13 12:54:22.421  DEBUG    urllib3.connectionpool  Starting new HTTP connection (1): httpbin.org:80
+2026-04-13 12:54:23.239  DEBUG    urllib3.connectionpool  http://httpbin.org:80 "GET / HTTP/1.1" 200 9593
+2026-04-13 12:54:23.286  INFO     client                Server reachable at http://httpbin.org
+2026-04-13 12:54:23.287  INFO     client                Probing list endpoint: http://httpbin.org/iphone/json/api/talkbacks/list/v2/yokra14737379/0/1
+2026-04-13 12:54:23.290  DEBUG    urllib3.connectionpool  Starting new HTTP connection (1): httpbin.org:80
+2026-04-13 12:54:23.797  DEBUG    urllib3.connectionpool  http://httpbin.org:80 "GET /iphone/json/api/talkbacks/list/v2/yokra14737379/0/1 HTTP/1.1" 404 233
+2026-04-13 12:54:23.799  INFO     client                List endpoint probe: HTTP 404  Content-Type: text/html
+2026-04-13 12:54:23.800  ERROR    client                List endpoint returned HTTP 404 — cannot fetch comments. body: <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<title>404 Not Found</title>
+<h1>Not Found</h1>
+<p>The requested URL was not found on the server.  If you entered the URL manually please check your spelling and try again.</p>
+

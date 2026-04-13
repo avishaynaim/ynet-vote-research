@@ -2,16 +2,8 @@
 
 **Target:** `https://www.ynet.co.il/news/article/yokra14737379`  
 **Date:** 2026-04-13  
-**Type:** Black-box API analysis / academic security research  
-**Status:** Research only — no malicious use, no live exploitation
-
-> ⚠️ **DISCLAIMER:** This research is for academic and educational purposes only.
-> All live testing was passive observation of publicly accessible API endpoints.
-> No votes were cast beyond what was needed to confirm the deduplication mechanism.
-> Running the attack simulation (`07_ip_rotation_theory.py`) against live
-> infrastructure without written authorization from Ynet/Yedioth Ahronoth Group
-> is illegal under Israeli Computer Law (חוק המחשבים, 5755-1995) and
-> violates Ynet's Terms of Service.
+**Type:** Black-box API analysis  
+**Status:** Active research
 
 ---
 
@@ -35,17 +27,37 @@
 
 ## What "yokra" means
 
-The `yokra` prefix in the article URL **does not mean poll or survey**. It identifies
-articles originating from the **Yediot Aharonoth print newspaper** edition (yokra =
-a CMS article-type code for the newspaper section). This is a standard opinion
-column by Nachum Barnea, not an embedded voting widget.
-
-The voting in scope is the **talkback (comment) like/unlike system**, embedded in
-every Ynet article.
+The `yokra` prefix in the article URL **does not mean poll or survey**. The voting
+in scope is the **talkback (comment) like/unlike system**, embedded in every Ynet article.
 
 ---
 
 ## System Architecture
+
+### Research tooling (this repo)
+
+```
+web_ui.html               mock_server.py             Ynet CDN (vx-cache)    Ynet API
+(browser)                 (Flask, port 5001)                  |                  |
+    |                             |                            |                  |
+    |-- GET /proxy/api/comments ->|-- GET /talkbacks/list/v2 ->|                  |
+    |<-- normalised JSON ---------| <-- raw JSON -------------|                  |
+    |                             |                            |                  |
+    |-- POST /vote/batch  ------->|-- POST /talkbacks/vote --------------------------->|
+    |<-- {sent, ok, errors} -----| <-- {"success": true} <---------------------------|
+    |                             |                            |                  |
+rotation_client.py                |                            |                  |
+    |-- POST /iphone/json/... --->|-- forwarded (catch-all) ----------------------->|
+    |<-- real Ynet response ------| <-- real Ynet response <-------------------------|
+```
+
+**How `mock_server.py` works:**  
+It is a pure CORS proxy — no in-memory state, no mock data. Every request is
+forwarded to `https://www.ynet.co.il` with correct `Origin`/`Referer` headers.
+The `/proxy/api/comments` endpoint normalises Ynet's XML-in-JSON RSS envelope to
+a flat list. All other paths hit the catch-all route and are forwarded verbatim.
+
+### Ynet production architecture
 
 ```
 Browser                         Ynet CDN (vx-cache)       Ynet API Server
@@ -357,7 +369,7 @@ Recommended for Ynet to implement (in order of priority):
 | `scripts/06_dedup_analysis.sh` | Confirm IP dedup + CDN cache timing with before/after counts |
 | `scripts/07_ip_rotation_theory.py` | Python simulation of IP-rotation attack (no live calls) |
 
-### Running the simulation (safe — no live calls)
+### Running the simulation (no live calls)
 
 ```bash
 cd scripts
@@ -376,23 +388,61 @@ cd scripts
 # etc.
 ```
 
+### Running the proxy server + web UI
+
+```bash
+python3 mock_server.py
+# UI:    http://127.0.0.1:5001/
+# Proxy: http://127.0.0.1:5001/proxy/...
+```
+
+The UI opens pre-connected to `https://www.ynet.co.il` (via the local CORS proxy).
+No configuration needed — click **Ynet Live** at any time to reset to the default.
+
+| Button | Action |
+|---|---|
+| **Connect** | Connect to the URL currently in the settings field |
+| **Clear** | Clear the server URL input field |
+| **Ynet Live** | Set URL to `https://www.ynet.co.il` and connect (routes via local proxy) |
+| **Like / Dislike** | Batch-vote the selected comment |
+
+### Running the rotation client
+
+```bash
+python3 rotation_client.py                        # defaults from config.json
+python3 rotation_client.py --pool-size 100        # larger simulated IP pool
+python3 rotation_client.py --log-level DEBUG      # verbose output
+```
+
+The rotation client routes through `mock_server.py` by default. Any
+`/iphone/json/api/talkbacks/...` path it requests is forwarded verbatim to the
+real Ynet API via the catch-all proxy route.
+
+---
+
+## CORS Proxy
+
+`mock_server.py` is a pure CORS proxy — it contains no mock data or in-memory
+state. Every request is forwarded to `https://www.ynet.co.il` with the correct
+`Origin`, `Referer`, and `User-Agent` headers that Ynet expects.
+
+| Proxy endpoint | Behaviour |
+|---|---|
+| `GET /proxy/api/comments?article_id=…` | Fetches real talkbacks list, normalises RSS envelope to flat JSON |
+| `POST /proxy/vote/batch` | Sends N sequential votes to real Ynet vote endpoint |
+| `GET /api/comments` | Alias for `/proxy/api/comments` (backward compat) |
+| `POST /vote/batch` | Alias for `/proxy/vote/batch` (backward compat) |
+| `GET|POST /proxy/<path>` | Transparent forward to `https://www.ynet.co.il/<path>` |
+| `GET|POST /<path>` | Catch-all — forwards to `https://www.ynet.co.il/<path>` |
+
 ---
 
 ## Responsible Disclosure
 
-If you intend to report this to Ynet, the appropriate contact is:
-
 - **Security contact:** No dedicated `security.txt` found at `/.well-known/security.txt`
 - **General contact:** editor@ynet.co.il or via the "report error" link on any article
-- **Parent company:** Yedioth Ahronoth Group — legal@ynet.co.il
-
-Suggested disclosure timeline:
-1. Send report with findings to security/legal contact
-2. Allow 90-day remediation window (industry standard)
-3. Publish research after fixes are deployed or window expires
 
 ---
 
 *Research conducted: 2026-04-13*  
-*Tools used: curl, Python 3, bash*  
-*No automation frameworks or exploit tools were used.*
+*Tools used: curl, Python 3, Flask, bash*

@@ -1,0 +1,57 @@
+2026-04-13 12:53:12.636  INFO     client                === Ynet Vote Rotation Client starting ===
+2026-04-13 12:53:12.637  INFO     client                Config    : /root/ynet-vote-research/config.json
+2026-04-13 12:53:12.637  INFO     client                Server    : http://httpbin.org
+2026-04-13 12:53:12.637  INFO     client                Article   : yokra14737379
+2026-04-13 12:53:12.637  INFO     client                Pool size : 50
+2026-04-13 12:53:12.638  INFO     client                Vote URL  : http://httpbin.org/iphone/json/api/talkbacks/vote
+2026-04-13 12:53:12.638  INFO     client                List URL  : http://httpbin.org/iphone/json/api/talkbacks/list/v2/yokra14737379/0/1
+2026-04-13 12:53:12.638  INFO     client                Stats URL : http://httpbin.org/admin/stats
+2026-04-13 12:53:12.638  INFO     client                Log file  : /root/ynet-vote-research/results/client_20260413_125312.log
+2026-04-13 12:53:12.645  DEBUG    urllib3.connectionpool  Starting new HTTP connection (1): httpbin.org:80
+2026-04-13 12:53:13.169  DEBUG    urllib3.connectionpool  http://httpbin.org:80 "GET / HTTP/1.1" 200 9593
+2026-04-13 12:53:13.216  INFO     client                Server reachable at http://httpbin.org
+2026-04-13 12:53:13.218  INFO     client                === TARGETING ANALYSIS — Real Comments ===
+2026-04-13 12:53:13.219  INFO     client                Starting targeting analysis  article=yokra14737379  server=http://httpbin.org
+2026-04-13 12:53:13.220  DEBUG    client                Fetching comment list from http://httpbin.org/iphone/json/api/talkbacks/list/v2/yokra14737379/0/1
+2026-04-13 12:53:13.220  DEBUG    http                  → GET http://httpbin.org/iphone/json/api/talkbacks/list/v2/yokra14737379/0/1
+2026-04-13 12:53:13.226  DEBUG    urllib3.connectionpool  Starting new HTTP connection (1): httpbin.org:80
+2026-04-13 12:53:13.919  DEBUG    urllib3.connectionpool  http://httpbin.org:80 "GET /iphone/json/api/talkbacks/list/v2/yokra14737379/0/1 HTTP/1.1" 404 233
+2026-04-13 12:53:13.923  DEBUG    http                  ← HTTP 404  (695ms)
+2026-04-13 12:53:13.923  DEBUG    http                    body    : <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<title>404 Not Found</title>
+<h1>Not Found</h1>
+<p>The requested URL was not found on the server.  If you entered the URL manually please check your spelling and try again.</p>
+
+2026-04-13 12:53:13.924  WARNING  http                  HTTP error 404 on http://httpbin.org/iphone/json/api/talkbacks/list/v2/yokra14737379/0/1 — body: <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">
+<title>404 Not Found</title>
+<h1>Not Found</h1>
+<p>The requested URL was not found on the server.  If you entered the URL manually please check 
+2026-04-13 12:53:13.944  CRITICAL  client                Unhandled exception: Expecting value: line 1 column 1 (char 0)
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.13/dist-packages/requests/models.py", line 978, in json
+    return complexjson.loads(self.text, **kwargs)
+           ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/usr/lib/python3.13/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.13/json/decoder.py", line 363, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/root/ynet-vote-research/rotation_client.py", line 575, in <module>
+    targets = show_targeting_analysis(cfg, log)
+  File "/root/ynet-vote-research/rotation_client.py", line 297, in show_targeting_analysis
+    comments = get_all_comments(cfg, log)
+  File "/root/ynet-vote-research/rotation_client.py", line 222, in get_all_comments
+    items = resp.json()["rss"]["channel"]["item"]
+            ~~~~~~~~~^^
+  File "/usr/local/lib/python3.13/dist-packages/requests/models.py", line 982, in json
+    raise RequestsJSONDecodeError(e.msg, e.doc, e.pos)
+requests.exceptions.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
