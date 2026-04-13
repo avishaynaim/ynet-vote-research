@@ -396,7 +396,7 @@ async function connect() {
     showError(
       `Cannot connect to <code>${Config.serverUrl}</code><br><br>` +
       (isTypeError
-        ? `Network error or CORS block. If using the Ynet Live URL, the browser cannot call the real API directly.<br>Use the mock server instead: <code>python3 mock_server.py</code>`
+        ? `Network error or CORS block. If using the Ynet Live URL, the browser cannot call the real API directly.<br>Use the local server instead: <code>python3 server.py</code>`
         : `Server returned: ${msg}`)
     );
   }

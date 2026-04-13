@@ -35,7 +35,7 @@ in scope is the **talkback (comment) like/unlike system**, embedded in every Yne
 ### Tooling (this repo)
 
 ```
-web_ui.html               mock_server.py             Ynet CDN (vx-cache)    Ynet API
+web_ui.html               server.py             Ynet CDN (vx-cache)    Ynet API
 (browser)                 (Flask, port 5001)                  |                  |
     |                             |                            |                  |
     |-- GET /proxy/api/comments ->|-- GET /talkbacks/list/v2 ->|                  |
@@ -49,8 +49,8 @@ rotation_client.py                |                            |                
     |<-- real Ynet response ------| <-- real Ynet response <-------------------------|
 ```
 
-**How `mock_server.py` works:**  
-It is a pure CORS proxy — no in-memory state, no mock data. Every request is
+**How `server.py` works:**  
+It is a pure CORS proxy — no in-memory state. Every request is
 forwarded to `https://www.ynet.co.il` with correct `Origin`/`Referer` headers.
 The `/proxy/api/comments` endpoint normalises Ynet's XML-in-JSON RSS envelope to
 a flat list. All other paths hit the catch-all route and are forwarded verbatim.
@@ -389,7 +389,7 @@ cd scripts
 ### Running the proxy server + web UI
 
 ```bash
-python3 mock_server.py
+python3 server.py
 # UI:    http://127.0.0.1:5001/
 # Proxy: http://127.0.0.1:5001/proxy/...
 ```
@@ -412,7 +412,7 @@ python3 rotation_client.py --pool-size 100        # larger simulated IP pool
 python3 rotation_client.py --log-level DEBUG      # verbose output
 ```
 
-The rotation client routes through `mock_server.py` by default. Any
+The rotation client routes through `server.py` by default. Any
 `/iphone/json/api/talkbacks/...` path it requests is forwarded verbatim to the
 real Ynet API via the catch-all proxy route.
 
@@ -420,7 +420,7 @@ real Ynet API via the catch-all proxy route.
 
 ## CORS Proxy
 
-`mock_server.py` is a pure CORS proxy — it contains no mock data or in-memory
+`server.py` is a pure CORS proxy — it contains no in-memory
 state. Every request is forwarded to `https://www.ynet.co.il` with the correct
 `Origin`, `Referer`, and `User-Agent` headers that Ynet expects.
 

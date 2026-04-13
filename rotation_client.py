@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-IP Rotation Vote Client — tests against any server (local mock or remote).
+IP Rotation Vote Client — runs against any server (local or remote).
 
 All configuration is read from config.json. Every value can be overridden
 via CLI arguments — nothing is hardcoded.
@@ -49,7 +49,7 @@ def parse_args():
     )
     parser.add_argument(
         "--pool-size", type=int, default=None, dest="pool_size",
-        help="Number of simulated IPs to use per test (default: from config or 25)",
+        help="Number of source IPs to use per test (default: from config or 25)",
     )
     parser.add_argument(
         "--log-level", default="INFO",
@@ -292,17 +292,17 @@ def get_admin_comment(talkback_id: int, cfg: dict, log) -> dict:
         }
     return {"likes": 0, "unlikes": 0, "net": 0, "vote_count": 0, "voters": []}
 
-def cast_vote(talkback_id: int, simulated_ip: str, cfg: dict, log,
+def cast_vote(talkback_id: int, source_ip: str, cfg: dict, log,
               like: bool = True, vote_type: str = "2state",
               cookie: str = None) -> dict:
     action = "LIKE" if like else "UNLIKE"
     log.debug("cast_vote  id=%d  ip=%s  action=%s  vote_type=%s  cookie=%s",
-              talkback_id, simulated_ip, action, vote_type, cookie)
+              talkback_id, source_ip, action, vote_type, cookie)
 
     headers = {
         "Content-Type":   "application/json",
         "Origin":         cfg["base"],
-        "X-Simulated-IP": simulated_ip,
+        "X-Source-IP": source_ip,
     }
     if cookie:
         headers["Cookie"] = f"talkback_{talkback_id}={cookie}"
@@ -318,7 +318,7 @@ def cast_vote(talkback_id: int, simulated_ip: str, cfg: dict, log,
     try:
         resp = _post(cfg["vote_url"], json=payload, headers=headers)
     except Exception as exc:
-        log.error("cast_vote FAILED  id=%d  ip=%s  error=%s", talkback_id, simulated_ip, exc)
+        log.error("cast_vote FAILED  id=%d  ip=%s  error=%s", talkback_id, source_ip, exc)
         raise
 
     result = {
@@ -329,10 +329,10 @@ def cast_vote(talkback_id: int, simulated_ip: str, cfg: dict, log,
 
     if resp.status_code == 200:
         log.debug("cast_vote OK  id=%d  ip=%s  action=%s  set_cookie=%s",
-                  talkback_id, simulated_ip, action, result["set_cookie"])
+                  talkback_id, source_ip, action, result["set_cookie"])
     else:
         log.warning("cast_vote REJECTED  id=%d  ip=%s  action=%s  status=%s  body=%s",
-                    talkback_id, simulated_ip, action, resp.status_code, result["body"])
+                    talkback_id, source_ip, action, resp.status_code, result["body"])
 
     return result
 
@@ -569,7 +569,7 @@ def test_validation(cfg: dict, log):
         try:
             resp = _post(cfg["vote_url"], json=payload,
                          headers={"Content-Type": "application/json",
-                                  "X-Simulated-IP": probe_ip})
+                                  "X-Source-IP": probe_ip})
             body = resp.json() if resp.text else {}
             log.info("TEST E  case='%s'  http=%d  body=%s",
                      label, resp.status_code, json.dumps(body, ensure_ascii=False))

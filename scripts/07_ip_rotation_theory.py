@@ -82,7 +82,7 @@ class IPPool:
 # Voting engine
 # ---------------------------------------------------------------------------
 
-class SimulatedVotingEngine:
+class VotingEngine:
     """
     Models the vote-and-check cycle.
 
@@ -161,7 +161,7 @@ def simulate_ip_rotation_attack(
     """
     Runs the attack and returns a report.
     """
-    engine = SimulatedVotingEngine(article_id, talkback_id, initial_likes)
+    engine = VotingEngine(article_id, talkback_id, initial_likes)
     results = {
         "article_id":    article_id,
         "talkback_id":   talkback_id,

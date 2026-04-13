@@ -6,8 +6,8 @@ Serves web_ui.html and proxies all API requests to the real Ynet API,
 bypassing browser CORS restrictions.
 
 Run:
-    python3 mock_server.py
-    python3 mock_server.py --config /path/to/other_config.json
+    python3 server.py
+    python3 server.py --config /path/to/other_config.json
 """
 
 import os
