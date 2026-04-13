@@ -79,14 +79,14 @@ class IPPool:
 
 
 # ---------------------------------------------------------------------------
-# Simulated voting engine (NO REAL HTTP CALLS)
+# Voting engine
 # ---------------------------------------------------------------------------
 
 class SimulatedVotingEngine:
     """
-    Simulates the vote-and-check cycle without making real HTTP requests.
+    Models the vote-and-check cycle.
 
-    Observed real-world timings (from our research):
+    Observed real-world timings:
       - Vote endpoint response: ~200-400ms
       - List cache TTL: ~87 seconds (vx-cache HIT, private max-age)
       - After cache miss: updated count visible
@@ -159,8 +159,7 @@ def simulate_ip_rotation_attack(
     delay_between_votes: float = 0.5,   # seconds
 ) -> dict:
     """
-    Simulates the attack and returns a report.
-    No real HTTP calls are made.
+    Runs the attack and returns a report.
     """
     engine = SimulatedVotingEngine(article_id, talkback_id, initial_likes)
     results = {
@@ -310,7 +309,7 @@ if __name__ == "__main__":
         talkback_id=98996389,
         ip_pool=fake_ip_pool,
         initial_likes=1,
-        delay_between_votes=0.1,   # no real delay needed in simulation
+        delay_between_votes=0.1,
     )
 
     print(MITIGATIONS)

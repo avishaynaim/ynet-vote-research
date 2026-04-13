@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Script 05: Map the server-side cookie state machine for vote deduplication
 # The server reads AND writes talkback_{id} cookies to track vote state.
-#
-# WARNING: Academic/research use only.
 
 ARTICLE_ID="yokra14737379"
 TARGET_ID="98996402"

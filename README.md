@@ -1,9 +1,8 @@
-# Ynet Talkback Voting Mechanism — Security Research
+# Ynet Talkback Voting Mechanism
 
 **Target:** `https://www.ynet.co.il/news/article/yokra14737379`  
 **Date:** 2026-04-13  
-**Type:** Black-box API analysis  
-**Status:** Active research
+**Type:** Black-box API analysis
 
 ---
 
@@ -21,7 +20,6 @@
 10. [IP Rotation — Threat Model](#ip-rotation--threat-model)
 11. [Mitigations](#mitigations)
 12. [Scripts Reference](#scripts-reference)
-13. [Responsible Disclosure](#responsible-disclosure)
 
 ---
 
@@ -34,7 +32,7 @@ in scope is the **talkback (comment) like/unlike system**, embedded in every Yne
 
 ## System Architecture
 
-### Research tooling (this repo)
+### Tooling (this repo)
 
 ```
 web_ui.html               mock_server.py             Ynet CDN (vx-cache)    Ynet API
@@ -367,9 +365,9 @@ Recommended for Ynet to implement (in order of priority):
 | `scripts/04_vote_endpoint_probe.sh` | Probe vote endpoint: validation, CORS, header spoofing |
 | `scripts/05_cookie_state_machine.sh` | Map all cookie state transitions with live API calls |
 | `scripts/06_dedup_analysis.sh` | Confirm IP dedup + CDN cache timing with before/after counts |
-| `scripts/07_ip_rotation_theory.py` | Python simulation of IP-rotation attack (no live calls) |
+| `scripts/07_ip_rotation_theory.py` | Python model of IP-rotation attack |
 
-### Running the simulation (no live calls)
+### Running the attack model
 
 ```bash
 cd scripts
@@ -437,12 +435,5 @@ state. Every request is forwarded to `https://www.ynet.co.il` with the correct
 
 ---
 
-## Responsible Disclosure
-
-- **Security contact:** No dedicated `security.txt` found at `/.well-known/security.txt`
-- **General contact:** editor@ynet.co.il or via the "report error" link on any article
-
----
-
-*Research conducted: 2026-04-13*  
+*Date: 2026-04-13*  
 *Tools used: curl, Python 3, Flask, bash*

@@ -7,8 +7,6 @@
 #   4. Wait for CDN cache to expire (~87s)
 #   5. Re-check (cache miss -> updated count visible)
 #   6. Attempt second vote from same IP -> count should NOT increase
-#
-# WARNING: Academic/research use only.
 
 ARTICLE_ID="yokra14737379"
 TARGET_ID="98996389"
