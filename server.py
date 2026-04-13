@@ -14,6 +14,9 @@ import os
 import sys
 import argparse
 import json
+import time
+import threading
+from datetime import datetime
 from flask import Flask, request, make_response, jsonify, send_from_directory
 import requests as req
 
@@ -35,6 +38,19 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
     app = Flask(__name__)
 
     DEFAULT_ARTICLE = cfg["article_id"]
+
+    # ── Client-log sink ──────────────────────────────────────────────────────
+    # Every event the browser emits (clicks, input changes, HTTP request/response,
+    # init, auto-refresh, etc.) gets appended to a JSONL file in results/.
+    # One file per server run; events from all browser tabs/sessions are interleaved
+    # but each record carries a session_id so they can be split later.
+    results_dir = os.path.join(base_dir, "results")
+    os.makedirs(results_dir, exist_ok=True)
+    log_path = os.path.join(
+        results_dir, f"web_client_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+    )
+    log_lock = threading.Lock()
+    print(f"  Client events → {log_path}")
 
     PROXY_HEADERS = {
         "Origin":     YNET_BASE,
@@ -64,6 +80,33 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
     @app.route("/")
     def serve_ui():
         return send_from_directory(base_dir, "web_ui.html")
+
+    # ── Client event sink ────────────────────────────────────────────────────
+    # Accepts a single event {...} or a batch {"events": [...]}.
+    # Writes one JSON record per line. Fire-and-forget — always returns 204.
+
+    @app.route("/client-log", methods=["POST", "OPTIONS"])
+    def client_log():
+        if request.method == "OPTIONS":
+            return preflight()
+        payload = request.get_json(silent=True) or {}
+        events = payload.get("events")
+        if events is None:
+            events = [payload]
+        server_ts = datetime.now().isoformat(timespec="milliseconds")
+        remote = request.headers.get("X-Forwarded-For", request.remote_addr)
+        ua = request.headers.get("User-Agent", "")
+        with log_lock:
+            with open(log_path, "a", encoding="utf-8") as f:
+                for e in events:
+                    rec = {
+                        "server_ts": server_ts,
+                        "remote": remote,
+                        "ua": ua,
+                        **(e if isinstance(e, dict) else {"raw": e}),
+                    }
+                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        return cors(make_response("", 204))
 
     # ── /proxy/api/comments — normalises real Ynet talkbacks list ────────────
 

@@ -715,9 +715,35 @@ const LOG_ICON = {
   http: '→', 'http-ok': '✓', 'http-err': '✗',
 };
 
+// Session id so interleaved events in the server file can be split per tab/reload.
+const SESSION_ID = (crypto.randomUUID && crypto.randomUUID()) ||
+  (Date.now().toString(36) + Math.random().toString(36).slice(2));
+
+// Server endpoint that receives every event. Always targets the server that
+// served this page (NOT Config.apiBase, which may point at Ynet). If the page
+// is opened as file:// the ship becomes a no-op.
+const LOG_SINK = (location.protocol === 'http:' || location.protocol === 'https:')
+  ? location.origin + '/client-log'
+  : null;
+
+function shipEvent(entry) {
+  if (!LOG_SINK) return;
+  try {
+    const body = JSON.stringify(entry);
+    // sendBeacon survives page unload and is fire-and-forget
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(LOG_SINK, new Blob([body], { type: 'application/json' }));
+    } else {
+      fetch(LOG_SINK, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body, keepalive: true }).catch(() => {});
+    }
+  } catch (_) { /* never break UI on logging failure */ }
+}
+
 function addLog(type, msg, details) {
   const ts = new Date();
   const now = ts.toLocaleTimeString('he-IL', { hour12: false }) + '.' + String(ts.getMilliseconds()).padStart(3,'0');
+  const entry = { session_id: SESSION_ID, ts: ts.toISOString(), type, msg, details };
   State.log.unshift({ type, msg, now, details, ts: ts.toISOString() });
   if (State.log.length > 500) State.log.pop();
   if (details !== undefined) {
@@ -725,8 +751,19 @@ function addLog(type, msg, details) {
   } else {
     console.log(`[${now}] ${type}: ${msg}`);
   }
+  shipEvent(entry);
   renderLog();
 }
+
+window.addEventListener('error', (e) => {
+  addLog('sys', `JS error: ${e.message}`, { filename: e.filename, lineno: e.lineno, colno: e.colno, stack: e.error && e.error.stack });
+});
+window.addEventListener('unhandledrejection', (e) => {
+  addLog('sys', `Unhandled promise rejection: ${e.reason}`, { reason: String(e.reason) });
+});
+window.addEventListener('beforeunload', () => {
+  shipEvent({ session_id: SESSION_ID, ts: new Date().toISOString(), type: 'sys', msg: 'Page unload' });
+});
 
 function renderLog() {
   const el = document.getElementById('logBody');
