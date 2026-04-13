@@ -1,19 +1,9 @@
 #!/usr/bin/env python3
 """
-Script 07: Theoretical IP-rotation vote amplification — academic model only.
+Script 07: IP-rotation vote amplification model.
 
-This script demonstrates the CONCEPT of how an IP-rotation attack would work
-against the Ynet talkback voting system based on the deduplication behaviour
-we observed. It does NOT execute against any live target.
-
-Use this for:
-  - Understanding the threat model
-  - Estimating attack complexity
-  - Drafting mitigations (see comments below)
-
-WARNING: Running this against live infrastructure without written authorization
-         is illegal under Israeli Computer Law (חוק המחשבים, 5755-1995),
-         EU CFAA equivalents, and violates Ynet ToS.
+Demonstrates how an IP-rotation attack works against the Ynet talkback voting
+system based on the deduplication behaviour we observed.
 """
 
 import os
@@ -63,7 +53,7 @@ class IPPool:
       - Residential proxies (e.g. Bright Data, Oxylabs, Smartproxy)
       - Tor exit nodes (rate-limited, often banned)
       - VPN endpoints (limited count, shared IPs)
-      - Botnet C2 (illegal)
+      - Botnet C2
       - Cloud VMs with elastic IPs (traceable)
     """
 

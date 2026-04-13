@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # Script 04: Probe the vote endpoint — validation, schema, and basic behaviour
-# WARNING: For academic/research use only. Do not run against live targets
-#          without explicit written authorization from Ynet/Yedioth Ahronoth.
 
 ARTICLE_ID="yokra14737379"
 TARGET_ID="98996389"   # A comment ID from the article
