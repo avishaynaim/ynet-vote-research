@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ynet Vote Research</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d27;
+      --card:     #21253a;
+      --card-sel: #2a3050;
+      --border:   #2e3350;
+      --accent:   #4f8ef7;
+      --like:     #22c55e;
+      --dislike:  #ef4444;
+      --warn:     #f59e0b;
+      --text:     #e2e8f0;
+      --muted:    #8892a4;
+      --r:        10px;
+    }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 12px 24px; display: flex; align-items: center;
+      justify-content: space-between; position: sticky; top: 0; z-index: 200;
+    }
+    .logo { display: flex; align-items: center; gap: 12px; }
+    .logo h1 { font-size: 1rem; font-weight: 700; color: var(--accent); }
+    .logo small { color: var(--muted); font-size: .75rem; }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .badge { border-radius: 20px; padding: 3px 12px; font-size: .7rem; font-weight: 700; }
+    .badge-research { background: #3b1c1c; color: #f87171; border: 1px solid #7f1d1d; }
+    .badge-connected { background: #14532d; color: #4ade80; border: 1px solid #15803d; }
+    .badge-disconnected { background: #3b1c1c; color: #f87171; border: 1px solid #7f1d1d; }
+
+    /* ── Settings bar ── */
+    .settings-bar {
+      background: #0d1020; border-bottom: 1px solid var(--border);
+      padding: 8px 24px; display: flex; align-items: center; gap: 12px;
+      font-size: .8rem;
+    }
+    .settings-bar label { color: var(--muted); white-space: nowrap; }
+    .settings-bar input {
+      flex: 1; max-width: 320px; background: var(--card); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 10px; color: var(--text); font-size: .82rem; outline: none;
+      font-family: monospace;
+    }
+    .settings-bar input:focus { border-color: var(--accent); }
+    .settings-bar input.error { border-color: var(--dislike); }
+    .btn-sm {
+      border: none; border-radius: 6px; padding: 5px 14px; font-size: .8rem;
+      font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap;
+    }
+    .btn-connect { background: var(--accent); color: #fff; }
+    .btn-connect:hover { opacity: .85; }
+    .server-info { color: var(--muted); font-size: .75rem; margin-right: auto; }
+
+    /* ── Layout ── */
+    .layout {
+      display: grid; grid-template-columns: 1fr 360px;
+      flex: 1; overflow: hidden; height: calc(100vh - 100px);
+    }
+
+    /* ── Panels ── */
+    .panel { overflow-y: auto; }
+    .comments-panel { padding: 18px 20px; border-left: 1px solid var(--border); }
+    .control-panel  { background: var(--surface); padding: 18px 18px; display: flex; flex-direction: column; gap: 16px; }
+
+    /* ── Panel header ── */
+    .panel-title { font-size: .7rem; font-weight: 700; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .pill { background: var(--border); color: var(--text); border-radius: 20px; padding: 1px 9px; font-size: .68rem; }
+
+    /* ── Search + sort ── */
+    .search-wrap { margin-bottom: 10px; }
+    .search-wrap input { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 12px; color: var(--text); font-size: .85rem; outline: none; direction: rtl; }
+    .search-wrap input:focus { border-color: var(--accent); }
+    .sort-bar { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+    .sort-btn { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: 20px; padding: 3px 12px; font-size: .75rem; cursor: pointer; transition: all .15s; }
+    .sort-btn:hover, .sort-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    /* ── Comment card ── */
+    .comment-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 12px 14px; margin-bottom: 8px; cursor: pointer; transition: all .15s; position: relative;
+    }
+    .comment-card:hover { border-color: #4f8ef755; background: var(--card-sel); }
+    .comment-card.selected { border-color: var(--accent); background: var(--card-sel); box-shadow: 0 0 0 2px rgba(79,142,247,.2); }
+    .rec-badge { position: absolute; top: 8px; left: 12px; background: #451a03; color: var(--warn); border: 1px solid #78350f; border-radius: 4px; font-size: .62rem; padding: 1px 6px; font-weight: 700; }
+    .comment-header { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
+    .avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .78rem; font-weight: 700; color: #fff; flex-shrink: 0; }
+    .comment-meta { flex: 1; min-width: 0; }
+    .comment-author { font-weight: 600; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .comment-sub { color: var(--muted); font-size: .7rem; display: flex; gap: 8px; }
+    .comment-text { font-size: .84rem; line-height: 1.55; direction: rtl; margin-bottom: 9px; }
+    .comment-stats { display: flex; gap: 12px; align-items: center; font-size: .78rem; }
+    .stat-like { color: var(--like); } .stat-dislike { color: var(--dislike); }
+    .stat-net { color: var(--muted); } .stat-sims { color: var(--muted); margin-right: auto; font-size: .7rem; }
+    .vote-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 7px; overflow: hidden; }
+    .vote-bar-fill { height: 100%; border-radius: 2px; transition: width .5s; }
+    .updated-flash { animation: flash .6s; }
+    @keyframes flash { 0%,100%{border-color:var(--border)} 50%{border-color:var(--like)} }
+
+    /* ── Control panel ── */
+    .selected-box { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 13px; min-height: 75px; }
+    .selected-box.empty { color: var(--muted); font-size: .83rem; line-height: 1.6; display: flex; align-items: center; justify-content: center; text-align: center; }
+    .prev-author { font-weight: 700; font-size: .88rem; margin-bottom: 4px; }
+    .prev-text { font-size: .8rem; color: var(--muted); line-height: 1.5; direction: rtl; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .prev-meta { font-size: .68rem; color: var(--border); margin-top: 6px; display: flex; gap: 12px; }
+
+    /* Count control */
+    .ctrl-label { font-size: .7rem; font-weight: 700; color: var(--muted); letter-spacing: .07em; text-transform: uppercase; margin-bottom: 8px; }
+    .count-grid { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+    .count-grid input[type=range] { accent-color: var(--accent); width: 100%; }
+    .count-val { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-size: .9rem; font-weight: 700; color: var(--accent); min-width: 56px; text-align: center; }
+    .count-text { width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 7px 12px; color: var(--text); font-size: .88rem; outline: none; text-align: center; margin-top: 6px; }
+    .count-text:focus { border-color: var(--accent); }
+
+    /* Action buttons */
+    .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .btn-action { border: none; border-radius: var(--r); padding: 12px; font-size: .88rem; font-weight: 700; cursor: pointer; transition: all .15s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .btn-action:disabled { opacity: .35; cursor: not-allowed; }
+    .btn-like    { background: #166534; color: #4ade80; border: 1px solid #15803d; }
+    .btn-dislike { background: #7f1d1d; color: #f87171; border: 1px solid #991b1b; }
+    .btn-like:hover:not(:disabled)    { background: #15803d; }
+    .btn-dislike:hover:not(:disabled) { background: #991b1b; }
+    .btn-full { width: 100%; background: var(--card); color: var(--muted); border: 1px solid var(--border); border-radius: var(--r); padding: 9px; font-size: .82rem; font-weight: 600; cursor: pointer; transition: all .15s; }
+    .btn-full:hover { border-color: var(--accent); color: var(--text); }
+
+    /* Progress */
+    .progress-wrap { display: none; }
+    .progress-wrap.active { display: block; }
+    .progress-outer { height: 7px; background: var(--card); border-radius: 4px; overflow: hidden; margin-bottom: 7px; }
+    .progress-inner { height: 100%; border-radius: 4px; width: 0%; transition: width .25s; background: var(--accent); }
+    .progress-label { font-size: .75rem; color: var(--muted); text-align: center; }
+
+    /* Result box */
+    .result-box { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 13px; display: none; }
+    .result-box.show { display: block; }
+    .result-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 7px; font-size: .83rem; }
+    .result-row:last-child { margin-bottom: 0; }
+    .rl { color: var(--muted); } .rv { font-weight: 700; }
+    .rv.g { color: var(--like); } .rv.r { color: var(--dislike); } .rv.a { color: var(--accent); }
+    .result-sep { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+    .lift-badge { display: inline-block; padding: 2px 10px; border-radius: 20px; font-size: .78rem; font-weight: 700; }
+    .lift-pos { background: #14532d; color: #4ade80; }
+    .lift-neg { background: #7f1d1d; color: #f87171; }
+
+    /* Log */
+    .log-wrap { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+    .log-head { padding: 8px 13px; border-bottom: 1px solid var(--border); font-size: .7rem; font-weight: 700; color: var(--muted); letter-spacing: .07em; text-transform: uppercase; display: flex; justify-content: space-between; }
+    .log-clr { cursor: pointer; font-size: .7rem; } .log-clr:hover { color: var(--text); }
+    .log-body { max-height: 160px; overflow-y: auto; }
+    .log-entry { padding: 5px 13px; font-size: .73rem; display: flex; gap: 7px; align-items: center; border-bottom: 1px solid var(--border); }
+    .log-entry:last-child { border-bottom: none; }
+    .log-t { color: var(--border); white-space: nowrap; }
+    .log-m { color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .log-p { border-radius: 20px; padding: 1px 7px; font-size: .65rem; font-weight: 700; white-space: nowrap; }
+    .lp-like { background: #14532d; color: #4ade80; }
+    .lp-dislike { background: #7f1d1d; color: #f87171; }
+    .lp-sys { background: var(--border); color: var(--muted); }
+    .log-empty { padding: 14px; color: var(--muted); font-size: .8rem; text-align: center; }
+
+    /* Empty / error states */
+    .state-msg { padding: 40px 20px; text-align: center; color: var(--muted); font-size: .88rem; line-height: 1.8; }
+    .state-msg code { background: var(--card); border-radius: 4px; padding: 2px 8px; color: var(--accent); font-size: .82rem; }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  </style>
+</head>
+<body>
+
+<!-- ══ Header ══════════════════════════════════════════════════════════ -->
+<header>
+  <div class="logo">
+    <h1>Ynet Vote Research</h1>
+    <small id="headerArticle">—</small>
+  </div>
+  <div class="header-right">
+    <span class="badge badge-research">⚠ RESEARCH ONLY</span>
+    <span class="badge" id="connBadge">● disconnected</span>
+  </div>
+</header>
+
+<!-- ══ Settings bar ═════════════════════════════════════════════════════ -->
+<div class="settings-bar">
+  <label>Server URL</label>
+  <input type="text" id="serverUrl" placeholder="http://127.0.0.1:5001"
+         onkeydown="if(event.key==='Enter') connect()">
+  <button class="btn-sm btn-connect" onclick="connect()">Connect</button>
+  <span class="server-info" id="serverInfo">Not connected</span>
+  <label>Article ID</label>
+  <input type="text" id="articleId" placeholder="yokra14737379" style="max-width:180px"
+         onkeydown="if(event.key==='Enter') loadComments()">
+  <button class="btn-sm btn-connect" onclick="loadComments()">Load</button>
+</div>
+
+<!-- ══ Layout ═══════════════════════════════════════════════════════════ -->
+<div class="layout">
+
+  <!-- ── Control panel (right) ── -->
+  <div class="control-panel panel">
+
+    <div>
+      <div class="panel-title">Selected Comment</div>
+      <div class="selected-box empty" id="selectedBox">
+        ← select a comment from the list
+      </div>
+    </div>
+
+    <div>
+      <div class="ctrl-label">Number of votes (IPs)</div>
+      <div class="count-grid">
+        <input type="range" id="slider" min="1" max="500" value="10"
+               oninput="syncCount(this.value)">
+        <span class="count-val" id="countVal">10</span>
+      </div>
+      <input type="number" class="count-text" id="countInput"
+             min="1" max="500" value="10" oninput="syncCount(this.value)">
+    </div>
+
+    <div>
+      <div class="ctrl-label">Action</div>
+      <div class="action-grid">
+        <button class="btn-action btn-like"    id="btnLike"    disabled onclick="vote(true)">👍 Like</button>
+        <button class="btn-action btn-dislike" id="btnDislike" disabled onclick="vote(false)">👎 Dislike</button>
+      </div>
+    </div>
+
+    <div class="progress-wrap" id="progressWrap">
+      <div class="progress-outer"><div class="progress-inner" id="progressBar"></div></div>
+      <div class="progress-label" id="progressLabel">Sending…</div>
+    </div>
+
+    <div class="result-box" id="resultBox">
+      <div class="panel-title" style="margin-bottom:10px">Last Result</div>
+      <div class="result-row"><span class="rl">Votes sent</span><span class="rv a" id="rCount">—</span></div>
+      <div class="result-row"><span class="rl">Accepted</span><span class="rv g" id="rAccepted">—</span></div>
+      <div class="result-row"><span class="rl">Dropped (dedup)</span><span class="rv r" id="rDropped">—</span></div>
+      <hr class="result-sep">
+      <div class="result-row"><span class="rl">Before</span><span class="rv" id="rBefore">—</span></div>
+      <div class="result-row"><span class="rl">After</span><span class="rv" id="rAfter">—</span></div>
+      <div class="result-row"><span class="rl">Lift</span><span class="rv" id="rLift">—</span></div>
+    </div>
+
+    <button class="btn-full" onclick="resetVotes()">↺ Reset all votes to original</button>
+
+    <div class="log-wrap">
+      <div class="log-head">
+        Activity Log
+        <span class="log-clr" onclick="clearLog()">Clear</span>
+      </div>
+      <div class="log-body" id="logBody">
+        <div class="log-empty">No activity</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Comments panel (left) ── -->
+  <div class="comments-panel panel">
+    <div class="panel-title">
+      Comments <span class="pill" id="commentCount">—</span>
+    </div>
+    <div class="search-wrap">
+      <input type="text" id="searchInput" placeholder="🔍  search comments…"
+             oninput="renderComments()">
+    </div>
+    <div class="sort-bar">
+      <button class="sort-btn active" onclick="setSort('newest',this)">Newest</button>
+      <button class="sort-btn" onclick="setSort('liked',this)">Most Liked</button>
+      <button class="sort-btn" onclick="setSort('disliked',this)">Most Disliked</button>
+      <button class="sort-btn" onclick="setSort('controversial',this)">Controversial</button>
+      <button class="sort-btn" onclick="setSort('zero',this)">Zero Votes</button>
+    </div>
+    <div id="commentsList"></div>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  CONFIG — everything lives here, nothing is hardcoded elsewhere in the file
+// ═══════════════════════════════════════════════════════════════════════════
+const Config = {
+  // Loaded from localStorage or set by user — the ONLY place we store the URL
+  serverUrl:  localStorage.getItem('serverUrl')  || 'http://127.0.0.1:5001',
+  articleId:  localStorage.getItem('articleId')  || '',
+  maxVotes:   500,    // overwritten by server's /api/config
+
+  // Endpoint templates — overwritten when server responds with its own /api/config
+  endpoints: {
+    config:     '/api/config',
+    comments:   '/api/comments',
+    voteBatch:  '/vote/batch',
+    vote:       '/iphone/json/api/talkbacks/vote',
+    stats:      '/admin/stats',
+    reset:      '/admin/reset',
+  },
+
+  save() {
+    localStorage.setItem('serverUrl', this.serverUrl);
+    localStorage.setItem('articleId', this.articleId);
+  },
+
+  url(key, params = {}) {
+    let path = this.endpoints[key] || key;
+    Object.entries(params).forEach(([k,v]) => { path = path.replace(`{${k}}`, v); });
+    return this.serverUrl.replace(/\/$/, '') + path;
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════════════════
+const State = {
+  comments:   [],
+  selectedId: null,
+  sort:       'newest',
+  log:        [],
+  connected:  false,
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  API — all HTTP calls go through here; uses Config.url()
+// ═══════════════════════════════════════════════════════════════════════════
+const API = {
+  async get(key, params = {}) {
+    const r = await fetch(Config.url(key, params));
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  },
+  async post(key, body, params = {}) {
+    const r = await fetch(Config.url(key, params), {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return r.json();
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CONNECTION
+// ═══════════════════════════════════════════════════════════════════════════
+async function connect() {
+  const urlInput = document.getElementById('serverUrl').value.trim();
+  const artInput = document.getElementById('articleId').value.trim();
+
+  if (urlInput) { Config.serverUrl = urlInput; }
+  if (artInput) { Config.articleId = artInput; }
+
+  document.getElementById('serverUrl').classList.remove('error');
+  document.getElementById('serverInfo').textContent = 'Connecting…';
+  setConnected(false);
+
+  try {
+    // Fetch server config — this is the SINGLE source of truth for endpoints
+    const cfg = await API.get('config');
+
+    // Overwrite endpoints from server response
+    if (cfg.endpoints) {
+      Object.assign(Config.endpoints, cfg.endpoints);
+    }
+    if (cfg.max_batch)  Config.maxVotes   = cfg.max_batch;
+    if (!Config.articleId && cfg.article_id) Config.articleId = cfg.article_id;
+
+    // Update slider max
+    document.getElementById('slider').max      = Config.maxVotes;
+    document.getElementById('countInput').max  = Config.maxVotes;
+
+    Config.save();
+    setConnected(true);
+
+    document.getElementById('serverInfo').textContent =
+      `${Config.serverUrl}  ·  cache ${cfg.cache_ttl}s  ·  max batch ${cfg.max_batch}`;
+    document.getElementById('articleId').value   = Config.articleId;
+    document.getElementById('headerArticle').textContent = Config.articleId;
+
+    await loadComments();
+    addLog('sys', `Connected to ${Config.serverUrl}`);
+
+  } catch(e) {
+    document.getElementById('serverUrl').classList.add('error');
+    document.getElementById('serverInfo').textContent = `Error: ${e.message}`;
+    addLog('sys', `Connection failed: ${e.message}`);
+    showError(`Cannot reach server at <code>${Config.serverUrl}</code><br>
+      Make sure the mock server is running:<br>
+      <code>python3 mock_server.py</code>`);
+  }
+}
+
+function setConnected(ok) {
+  State.connected = ok;
+  const badge = document.getElementById('connBadge');
+  badge.textContent = ok ? '● connected' : '● disconnected';
+  badge.className   = `badge ${ok ? 'badge-connected' : 'badge-disconnected'}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  COMMENTS
+// ═══════════════════════════════════════════════════════════════════════════
+async function loadComments() {
+  const artInput = document.getElementById('articleId').value.trim();
+  if (artInput) { Config.articleId = artInput; Config.save(); }
+  document.getElementById('headerArticle').textContent = Config.articleId || '—';
+
+  try {
+    const data = await API.get('comments', { article_id: Config.articleId });
+    State.comments = data.comments;
+    document.getElementById('commentCount').textContent = data.total;
+    renderComments();
+    // Re-select if one was previously selected
+    if (State.selectedId) {
+      const still = State.comments.find(c => c.id === State.selectedId);
+      if (still) updateSelectedBox(still);
+    }
+  } catch(e) {
+    showError(`Failed to load comments: ${e.message}`);
+  }
+}
+
+function sorted(list) {
+  const s = [...list];
+  if (State.sort === 'newest')        s.sort((a,b) => b.id - a.id);
+  if (State.sort === 'liked')         s.sort((a,b) => b.likes - a.likes);
+  if (State.sort === 'disliked')      s.sort((a,b) => b.unlikes - a.unlikes);
+  if (State.sort === 'controversial') s.sort((a,b) => (b.likes+b.unlikes)-(a.likes+a.unlikes));
+  if (State.sort === 'zero')          s.sort((a,b) => (a.likes+a.unlikes)-(b.likes+b.unlikes));
+  return s;
+}
+
+function renderComments() {
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  let list = q
+    ? State.comments.filter(c =>
+        c.text.toLowerCase().includes(q) ||
+        c.author.toLowerCase().includes(q) ||
+        String(c.id).includes(q))
+    : [...State.comments];
+
+  list = sorted(list);
+  const el = document.getElementById('commentsList');
+
+  if (!list.length) {
+    el.innerHTML = '<div class="state-msg">No comments found</div>';
+    return;
+  }
+
+  el.innerHTML = list.map(c => {
+    const total   = c.likes + c.unlikes;
+    const pct     = total > 0 ? Math.round(c.likes / total * 100) : 0;
+    const init    = (c.author || '?').trim()[0];
+    const time    = c.pubDate ? c.pubDate.substring(11,16) : '';
+    const sel     = c.id === State.selectedId;
+    const barColor= c.net >= 0 ? '#22c55e' : '#ef4444';
+
+    return `<div class="comment-card${sel ? ' selected' : ''}"
+                 id="card-${c.id}" onclick="selectComment(${c.id})">
+      ${c.recommended ? '<span class="rec-badge">★ מומלץ</span>' : ''}
+      <div class="comment-header">
+        <div class="avatar" style="background:${avatarColor(c.author)}">${esc(init)}</div>
+        <div class="comment-meta">
+          <div class="comment-author">${esc(c.author) || 'אנונימי'}</div>
+          <div class="comment-sub"><span>${time}</span><span>#${c.id}</span></div>
+        </div>
+      </div>
+      <div class="comment-text">${esc(c.text)}</div>
+      <div class="comment-stats">
+        <span class="stat-like">👍 ${c.likes}</span>
+        <span class="stat-dislike">👎 ${c.unlikes}</span>
+        <span class="stat-net">net ${c.net >= 0 ? '+' : ''}${c.net}</span>
+        ${c.vote_count > 0 ? `<span class="stat-sims">🔁 ${c.vote_count} sim.</span>` : ''}
+      </div>
+      ${total > 0 ? `<div class="vote-bar">
+        <div class="vote-bar-fill" style="width:${pct}%;background:${barColor}"></div>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function selectComment(id) {
+  State.selectedId = id;
+  const c = State.comments.find(x => x.id === id);
+  if (!c) return;
+  document.querySelectorAll('.comment-card').forEach(el => el.classList.remove('selected'));
+  const card = document.getElementById(`card-${id}`);
+  if (card) { card.classList.add('selected'); card.scrollIntoView({block:'nearest',behavior:'smooth'}); }
+  updateSelectedBox(c);
+  document.getElementById('btnLike').disabled    = false;
+  document.getElementById('btnDislike').disabled = false;
+  document.getElementById('resultBox').classList.remove('show');
+}
+
+function updateSelectedBox(c) {
+  document.getElementById('selectedBox').className = 'selected-box';
+  document.getElementById('selectedBox').innerHTML = `
+    <div class="prev-author">${esc(c.author) || 'אנונימי'}</div>
+    <div class="prev-text">${esc(c.text)}</div>
+    <div class="prev-meta">
+      <span>ID: ${c.id}</span>
+      <span>👍 ${c.likes}</span>
+      <span>👎 ${c.unlikes}</span>
+      <span>net ${c.net >= 0 ? '+' : ''}${c.net}</span>
+    </div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VOTING
+// ═══════════════════════════════════════════════════════════════════════════
+async function vote(like) {
+  if (!State.selectedId) return;
+  const count = parseInt(document.getElementById('countInput').value) || 10;
+  const c     = State.comments.find(x => x.id === State.selectedId);
+
+  // Lock UI
+  document.getElementById('btnLike').disabled    = true;
+  document.getElementById('btnDislike').disabled = true;
+  document.getElementById('resultBox').classList.remove('show');
+
+  // Progress
+  const pw    = document.getElementById('progressWrap');
+  const pb    = document.getElementById('progressBar');
+  const pl    = document.getElementById('progressLabel');
+  pw.classList.add('active');
+  pb.style.width = '0%'; pb.style.background = 'var(--accent)';
+  pl.textContent = `Sending ${count} ${like ? 'likes' : 'dislikes'}…`;
+
+  let prog = 0;
+  const ticker = setInterval(() => {
+    prog = Math.min(prog + Math.random() * 10, 88);
+    pb.style.width = prog + '%';
+  }, 100);
+
+  try {
+    const data = await API.post('voteBatch', {
+      article_id:  Config.articleId,
+      talkback_id: State.selectedId,
+      count,
+      like,
+    });
+
+    clearInterval(ticker);
+    pb.style.width = '100%';
+    pl.textContent = `Done — ${data.accepted} accepted / ${data.dropped} dropped`;
+
+    // Show result
+    const lift = like
+      ? data.after.likes   - data.before.likes
+      : data.after.unlikes - data.before.unlikes;
+
+    document.getElementById('rCount').textContent    = count;
+    document.getElementById('rAccepted').textContent = data.accepted;
+    document.getElementById('rDropped').textContent  = data.dropped;
+    document.getElementById('rBefore').textContent   = `👍 ${data.before.likes}  👎 ${data.before.unlikes}`;
+    document.getElementById('rAfter').textContent    = `👍 ${data.after.likes}  👎 ${data.after.unlikes}`;
+    document.getElementById('rLift').innerHTML =
+      `<span class="lift-badge ${lift >= 0 ? 'lift-pos' : 'lift-neg'}">${lift >= 0 ? '+' : ''}${lift} ${like ? 'likes' : 'dislikes'}</span>`;
+    document.getElementById('resultBox').classList.add('show');
+
+    addLog(like ? 'like' : 'dislike',
+      `${c?.author || '#'+State.selectedId} — ${count} votes → +${data.accepted} (lift ${lift >= 0 ? '+' : ''}${lift})`);
+
+    await loadComments();
+
+    // Flash updated card
+    const card = document.getElementById(`card-${State.selectedId}`);
+    if (card) { card.classList.add('updated-flash'); setTimeout(() => card.classList.remove('updated-flash'), 700); }
+
+  } catch(e) {
+    clearInterval(ticker);
+    pb.style.background = 'var(--dislike)';
+    pb.style.width = '100%';
+    pl.textContent = `Error: ${e.message}`;
+    addLog('sys', `Vote failed: ${e.message}`);
+  }
+
+  setTimeout(() => {
+    pw.classList.remove('active');
+    pb.style.width = '0%'; pb.style.background = 'var(--accent)';
+    if (State.selectedId) {
+      document.getElementById('btnLike').disabled    = false;
+      document.getElementById('btnDislike').disabled = false;
+    }
+  }, 2500);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CONTROLS
+// ═══════════════════════════════════════════════════════════════════════════
+function syncCount(v) {
+  v = Math.min(Config.maxVotes, Math.max(1, parseInt(v) || 1));
+  document.getElementById('slider').value     = v;
+  document.getElementById('countInput').value = v;
+  document.getElementById('countVal').textContent = v;
+}
+
+function setSort(key, btn) {
+  State.sort = key;
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderComments();
+}
+
+async function resetVotes() {
+  if (!confirm('Reset all votes to original values?')) return;
+  try {
+    await API.post('reset', { article_id: Config.articleId });
+    State.selectedId = null;
+    document.getElementById('selectedBox').className = 'selected-box empty';
+    document.getElementById('selectedBox').textContent = '← select a comment from the list';
+    document.getElementById('btnLike').disabled    = true;
+    document.getElementById('btnDislike').disabled = true;
+    document.getElementById('resultBox').classList.remove('show');
+    addLog('sys', 'All votes reset to original');
+    await loadComments();
+  } catch(e) { addLog('sys', `Reset failed: ${e.message}`); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ACTIVITY LOG
+// ═══════════════════════════════════════════════════════════════════════════
+function addLog(type, msg) {
+  const now = new Date().toLocaleTimeString('he-IL');
+  State.log.unshift({ type, msg, now });
+  if (State.log.length > 100) State.log.pop();
+  renderLog();
+}
+
+function renderLog() {
+  const el = document.getElementById('logBody');
+  if (!State.log.length) { el.innerHTML = '<div class="log-empty">No activity</div>'; return; }
+  el.innerHTML = State.log.map(e => `
+    <div class="log-entry">
+      <span class="log-t">${e.now}</span>
+      <span class="log-p ${e.type === 'like' ? 'lp-like' : e.type === 'dislike' ? 'lp-dislike' : 'lp-sys'}">
+        ${e.type === 'like' ? '👍' : e.type === 'dislike' ? '👎' : '⚙'}
+      </span>
+      <span class="log-m">${esc(e.msg)}</span>
+    </div>`).join('');
+}
+
+function clearLog() { State.log = []; renderLog(); }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════════════════════════
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function avatarColor(name) {
+  const p = ['#4f8ef7','#a855f7','#06b6d4','#f59e0b','#10b981','#f43f5e','#8b5cf6'];
+  let h = 0; for (const ch of (name||'')) h = ch.charCodeAt(0) + ((h<<5)-h);
+  return p[Math.abs(h) % p.length];
+}
+
+function showError(html) {
+  document.getElementById('commentsList').innerHTML = `<div class="state-msg">${html}</div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════════════════
+(function init() {
+  // Restore saved values into inputs
+  document.getElementById('serverUrl').value = Config.serverUrl;
+  document.getElementById('articleId').value = Config.articleId;
+
+  // Auto-connect on load
+  connect();
+
+  // Auto-refresh every 15s
+  setInterval(() => { if (State.connected) loadComments(); }, 15000);
+})();
+</script>
+</body>
+</html>
