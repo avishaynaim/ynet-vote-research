@@ -152,15 +152,25 @@
     .log-wrap { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
     .log-head { padding: 8px 13px; border-bottom: 1px solid var(--border); font-size: .7rem; font-weight: 700; color: var(--muted); letter-spacing: .07em; text-transform: uppercase; display: flex; justify-content: space-between; }
     .log-clr { cursor: pointer; font-size: .7rem; } .log-clr:hover { color: var(--text); }
-    .log-body { max-height: 160px; overflow-y: auto; }
-    .log-entry { padding: 5px 13px; font-size: .73rem; display: flex; gap: 7px; align-items: center; border-bottom: 1px solid var(--border); }
+    .log-body { max-height: 320px; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .log-entry { font-size: .72rem; border-bottom: 1px solid var(--border); }
     .log-entry:last-child { border-bottom: none; }
-    .log-t { color: var(--border); white-space: nowrap; }
-    .log-m { color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .log-row { padding: 4px 10px; display: flex; gap: 6px; align-items: center; }
+    .log-toggle { cursor: pointer; color: var(--muted); font-size: .7rem; width: 10px; user-select: none; }
+    .log-toggle:hover { color: var(--text); }
+    .log-toggle-empty { display: inline-block; width: 10px; }
+    .log-t { color: #6b7280; white-space: nowrap; font-size: .68rem; }
+    .log-m { color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .log-p { border-radius: 20px; padding: 1px 7px; font-size: .65rem; font-weight: 700; white-space: nowrap; }
     .lp-like { background: #14532d; color: #4ade80; }
     .lp-dislike { background: #7f1d1d; color: #f87171; }
     .lp-sys { background: var(--border); color: var(--muted); }
+    .lp-http { background: #1e3a8a; color: #93c5fd; }
+    .lp-err { background: #7f1d1d; color: #fca5a5; }
+    .lp-action { background: #374151; color: #d1d5db; }
+    .lp-change { background: #422006; color: #fbbf24; }
+    .log-d { display: none; margin: 0 10px 6px 28px; padding: 6px 8px; background: #0b0f1a; border: 1px solid var(--border); border-radius: 4px; color: #cbd5e1; font-size: .68rem; white-space: pre-wrap; word-break: break-all; max-height: 260px; overflow-y: auto; }
+    .log-d.show { display: block; }
     .log-empty { padding: 14px; color: var(--muted); font-size: .8rem; text-align: center; }
 
     /* Empty / error states */
@@ -189,12 +199,13 @@
 <div class="settings-bar">
   <label>Server URL</label>
   <input type="text" id="serverUrl" placeholder="http://127.0.0.1:5001"
+         oninput="onServerUrlInput(this.value)"
          onkeydown="if(event.key==='Enter') connect()">
   <button class="btn-sm btn-connect" onclick="connect()">Connect</button>
   <button class="btn-sm" style="background:var(--card);color:var(--muted);border:1px solid var(--border)"
-          onclick="document.getElementById('serverUrl').value='';document.getElementById('serverUrl').focus()">Clear</button>
+          onclick="addLog('action','Click: Clear URL');document.getElementById('serverUrl').value='';document.getElementById('serverUrl').focus()">Clear</button>
   <button class="btn-sm" style="background:var(--card);color:var(--muted);border:1px solid var(--border)"
-          onclick="document.getElementById('serverUrl').value='https://www.ynet.co.il';connect()">Ynet Live</button>
+          onclick="addLog('action','Click: Ynet Live');document.getElementById('serverUrl').value='https://www.ynet.co.il';connect()">Ynet Live</button>
   <span class="server-info" id="serverInfo">Not connected</span>
 </div>
 
@@ -249,6 +260,7 @@
     <div class="log-wrap">
       <div class="log-head">
         Activity Log
+        <span class="log-clr" onclick="exportLog()" style="margin-right:8px">Export</span>
         <span class="log-clr" onclick="clearLog()">Clear</span>
       </div>
       <div class="log-body" id="logBody">
@@ -265,7 +277,7 @@
     </div>
     <div class="search-wrap">
       <input type="text" id="searchInput" placeholder="🔍  search comments…"
-             oninput="renderComments()">
+             oninput="onSearchInput(this.value)">
     </div>
     <div class="sort-bar">
       <button class="sort-btn active" onclick="setSort('newest',this)">Newest</button>
@@ -338,21 +350,81 @@ const State = {
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  API — all HTTP calls go through here; uses Config.url()
+//  Every request is logged (console group + activity log entry).
 // ═══════════════════════════════════════════════════════════════════════════
+let _reqSeq = 0;
+
+async function loggedFetch(url, opts = {}) {
+  const id      = ++_reqSeq;
+  const method  = (opts.method || 'GET').toUpperCase();
+  const started = performance.now();
+  const reqBody = opts.body != null ? tryParseJSON(opts.body) : undefined;
+
+  console.groupCollapsed(`%c→ HTTP #${id} ${method} ${url}`, 'color:#4f8ef7');
+  console.log('headers:', opts.headers || {});
+  if (reqBody !== undefined) console.log('body:', reqBody);
+  console.groupEnd();
+
+  addLog('http', `→ #${id} ${method} ${shortUrl(url)}`, {
+    id, phase: 'request', method, url, headers: opts.headers || {}, body: reqBody,
+  });
+
+  let resp, text, parsed, err;
+  try {
+    resp = await fetch(url, opts);
+    text = await resp.text();
+    try { parsed = JSON.parse(text); } catch { parsed = text; }
+  } catch (e) {
+    err = e;
+  }
+  const durMs = Math.round(performance.now() - started);
+
+  if (err) {
+    console.group(`%c✗ HTTP #${id} ${method} ${url} — network error (${durMs}ms)`, 'color:#ef4444');
+    console.error(err);
+    console.groupEnd();
+    addLog('http-err', `✗ #${id} ${method} ${shortUrl(url)} — ${err.message} (${durMs}ms)`,
+      { id, phase: 'error', method, url, error: err.message, durMs });
+    throw err;
+  }
+
+  const ok = resp.ok;
+  const color = ok ? '#22c55e' : '#ef4444';
+  console.groupCollapsed(`%c← HTTP #${id} ${resp.status} ${method} ${url} (${durMs}ms)`, `color:${color}`);
+  const respHeaders = {};
+  resp.headers.forEach((v, k) => { respHeaders[k] = v; });
+  console.log('status:', resp.status, resp.statusText);
+  console.log('headers:', respHeaders);
+  console.log('body:', parsed);
+  console.groupEnd();
+
+  addLog(ok ? 'http-ok' : 'http-err',
+    `← #${id} ${resp.status} ${method} ${shortUrl(url)} (${durMs}ms)`,
+    { id, phase: 'response', method, url, status: resp.status, statusText: resp.statusText,
+      headers: respHeaders, body: parsed, durMs });
+
+  if (!ok) {
+    const e = new Error(`HTTP ${resp.status}`);
+    e.status = resp.status;
+    e.body = parsed;
+    throw e;
+  }
+  return parsed;
+}
+
+function tryParseJSON(s) { try { return JSON.parse(s); } catch { return s; } }
+function shortUrl(u) { try { const x = new URL(u, location.origin); return x.pathname + x.search; } catch { return u; } }
+
 const API = {
   async get(key, params = {}) {
-    const r = await fetch(Config.url(key, params));
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
+    return loggedFetch(Config.url(key, params));
   },
   async post(key, body, params = {}) {
-    const r = await fetch(Config.url(key, params), {
+    return loggedFetch(Config.url(key, params), {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(body),
     });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
-    return r.json();
   },
 };
 
@@ -363,13 +435,14 @@ async function connect() {
   const urlInput = document.getElementById('serverUrl').value.trim();
   if (urlInput) { Config.serverUrl = urlInput; }
 
+  addLog('action', `Click: Connect → ${Config.serverUrl}`, { serverUrl: Config.serverUrl, articleId: Config.articleId });
+
   document.getElementById('serverUrl').classList.remove('error');
   document.getElementById('serverInfo').textContent = 'Connecting…';
   setConnected(false);
 
   try {
-    const probe = await fetch(Config.url('comments', { article_id: Config.articleId }), { method: 'GET' });
-    if (!probe.ok) throw new Error(`HTTP ${probe.status}`);
+    await loggedFetch(Config.url('comments', { article_id: Config.articleId }));
 
     document.getElementById('slider').max     = Config.maxVotes;
     document.getElementById('countInput').max = Config.maxVotes;
@@ -493,6 +566,8 @@ function selectComment(id) {
   State.selectedId = id;
   const c = State.comments.find(x => x.id === id);
   if (!c) return;
+  addLog('action', `Click: select comment #${id} — ${c.author || 'אנונימי'}`,
+    { id, author: c.author, text: c.text, likes: c.likes, unlikes: c.unlikes });
   document.querySelectorAll('.comment-card').forEach(el => el.classList.remove('selected'));
   const card = document.getElementById(`card-${id}`);
   if (card) { card.classList.add('selected'); card.scrollIntoView({block:'nearest',behavior:'smooth'}); }
@@ -522,6 +597,8 @@ async function vote(like) {
   if (!State.selectedId) return;
   const count = parseInt(document.getElementById('countInput').value) || 10;
   const c     = State.comments.find(x => x.id === State.selectedId);
+  addLog('action', `Click: ${like ? '👍 Like' : '👎 Dislike'} ×${count} on #${State.selectedId}`,
+    { action: like ? 'like' : 'dislike', count, talkback_id: State.selectedId, articleId: Config.articleId });
 
   // Lock UI
   document.getElementById('btnLike').disabled    = true;
@@ -604,43 +681,106 @@ async function vote(like) {
 //  CONTROLS
 // ═══════════════════════════════════════════════════════════════════════════
 function syncCount(v) {
+  const prev = parseInt(document.getElementById('countInput').value) || null;
   v = Math.min(Config.maxVotes, Math.max(1, parseInt(v) || 1));
   document.getElementById('slider').value     = v;
   document.getElementById('countInput').value = v;
   document.getElementById('countVal').textContent = v;
+  if (prev !== v) addLog('change', `Change: vote count ${prev} → ${v}`, { field: 'count', prev, next: v });
 }
 
 function setSort(key, btn) {
+  const prev = State.sort;
   State.sort = key;
   document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   renderComments();
+  addLog('action', `Click: sort ${prev} → ${key}`, { field: 'sort', prev, next: key });
+}
+
+function onSearchInput(val) {
+  addLog('change', `Change: search = "${val}"`, { field: 'search', value: val });
+  renderComments();
+}
+
+function onServerUrlInput(val) {
+  addLog('change', `Change: serverUrl = "${val}"`, { field: 'serverUrl', value: val });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  ACTIVITY LOG
 // ═══════════════════════════════════════════════════════════════════════════
-function addLog(type, msg) {
-  const now = new Date().toLocaleTimeString('he-IL');
-  State.log.unshift({ type, msg, now });
-  if (State.log.length > 100) State.log.pop();
+const LOG_ICON = {
+  like: '👍', dislike: '👎', sys: '⚙', action: '👆', change: '✏',
+  http: '→', 'http-ok': '✓', 'http-err': '✗',
+};
+
+function addLog(type, msg, details) {
+  const ts = new Date();
+  const now = ts.toLocaleTimeString('he-IL', { hour12: false }) + '.' + String(ts.getMilliseconds()).padStart(3,'0');
+  State.log.unshift({ type, msg, now, details, ts: ts.toISOString() });
+  if (State.log.length > 500) State.log.pop();
+  if (details !== undefined) {
+    console.log(`[${now}] ${type}: ${msg}`, details);
+  } else {
+    console.log(`[${now}] ${type}: ${msg}`);
+  }
   renderLog();
 }
 
 function renderLog() {
   const el = document.getElementById('logBody');
   if (!State.log.length) { el.innerHTML = '<div class="log-empty">No activity</div>'; return; }
-  el.innerHTML = State.log.map(e => `
-    <div class="log-entry">
-      <span class="log-t">${e.now}</span>
-      <span class="log-p ${e.type === 'like' ? 'lp-like' : e.type === 'dislike' ? 'lp-dislike' : 'lp-sys'}">
-        ${e.type === 'like' ? '👍' : e.type === 'dislike' ? '👎' : '⚙'}
-      </span>
-      <span class="log-m">${esc(e.msg)}</span>
-    </div>`).join('');
+  el.innerHTML = State.log.map((e, i) => {
+    const icon = LOG_ICON[e.type] || '·';
+    const cls = e.type === 'like' ? 'lp-like'
+              : e.type === 'dislike' ? 'lp-dislike'
+              : e.type === 'http-err' ? 'lp-err'
+              : e.type.startsWith('http') ? 'lp-http'
+              : e.type === 'action' ? 'lp-action'
+              : e.type === 'change' ? 'lp-change'
+              : 'lp-sys';
+    const detailHtml = e.details !== undefined
+      ? `<pre class="log-d" id="log-d-${i}">${esc(JSON.stringify(e.details, null, 2))}</pre>` : '';
+    const toggle = e.details !== undefined
+      ? `<span class="log-toggle" onclick="toggleLogDetail(${i})">▸</span>` : '<span class="log-toggle-empty"></span>';
+    return `<div class="log-entry">
+      <div class="log-row">
+        ${toggle}
+        <span class="log-t">${e.now}</span>
+        <span class="log-p ${cls}">${icon}</span>
+        <span class="log-m">${esc(e.msg)}</span>
+      </div>
+      ${detailHtml}
+    </div>`;
+  }).join('');
 }
 
-function clearLog() { State.log = []; renderLog(); }
+function toggleLogDetail(i) {
+  const el = document.getElementById(`log-d-${i}`);
+  if (!el) return;
+  el.classList.toggle('show');
+  const row = el.previousElementSibling;
+  const arrow = row.querySelector('.log-toggle');
+  if (arrow) arrow.textContent = el.classList.contains('show') ? '▾' : '▸';
+}
+
+function clearLog() {
+  addLog('action', 'Click: Clear log');
+  State.log = [];
+  renderLog();
+}
+
+function exportLog() {
+  const blob = new Blob([JSON.stringify(State.log, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ynet_client_log_${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  addLog('action', 'Click: Export log');
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  UTILS
@@ -667,11 +807,21 @@ function showError(html) {
 
   document.getElementById('serverUrl').value = Config.serverUrl;
 
+  addLog('sys', `Init — serverUrl=${Config.serverUrl} articleId=${Config.articleId}`,
+    { userAgent: navigator.userAgent, url: location.href, config: {
+        serverUrl: Config.serverUrl, articleId: Config.articleId, maxVotes: Config.maxVotes,
+        endpoints: Config.endpoints, apiBase: Config.apiBase, isLive: Config.isLive } });
+
   // Auto-connect on load
   connect();
 
   // Auto-refresh every 15s
-  setInterval(() => { if (State.connected) loadComments(); }, 15000);
+  setInterval(() => {
+    if (State.connected) {
+      addLog('sys', 'Auto-refresh tick');
+      loadComments();
+    }
+  }, 15000);
 })();
 </script>
 </body>
