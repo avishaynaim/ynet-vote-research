@@ -223,11 +223,15 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
         }
         headers = {**PROXY_HEADERS, "Content-Type": "application/json"}
 
-        # Randomize proxy order each batch (no deterministic pattern)
-        # and fan out in parallel. Stop as soon as `count` HTTP 200s land;
-        # any still-pending proxies are cancelled.
+        # Randomize proxy order each batch (no deterministic pattern).
+        # random.sample(pool, len(pool)) returns a shuffled permutation
+        # WITHOUT replacement — each proxy in the pool is used at most
+        # once per /vote/batch call, even if retries are needed.
+        # Fan out in parallel; stop as soon as `count` HTTP 200s land.
         if proxy_pool:
             shuffled = random.sample(proxy_pool, len(proxy_pool))
+            assert len({id(e) for e in shuffled}) == len(shuffled), \
+                "duplicate proxy entry in shuffled pool"
             used_proxies = True
         else:
             shuffled = [None] * count
