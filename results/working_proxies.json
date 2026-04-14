@@ -1,16 +1,510 @@
 {
-  "description": "Known-working public HTTP/SOCKS proxies that successfully POSTed a vote to Ynet and got a 200 + {\"success\":true} response. Maintained cumulatively across runs.",
-  "last_verified": "2026-04-13T19:00Z",
+  "description": "Known-working public HTTP/SOCKS proxies that successfully reach the Ynet talkback API with our header set. Entries flagged 'vote-confirmed' were verified end-to-end with a POST vote; newer entries were validated by a GET on the list endpoint (same origin + headers) to avoid extra counter increments during discovery. Maintained cumulatively across runs.",
+  "last_verified": "2026-04-13T20:00Z",
   "proxies": [
-    { "scheme": "http", "addr": "37.187.109.70:10111",  "exit_ip": "37.187.109.70",  "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "OVH FR" },
-    { "scheme": "http", "addr": "8.219.195.129:1080",   "exit_ip": "8.219.195.129",  "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "Alibaba Cloud SG" },
-    { "scheme": "http", "addr": "200.174.198.32:8888",  "exit_ip": "200.174.198.49", "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "BR" },
-    { "scheme": "http", "addr": "167.103.34.108:8800",  "exit_ip": "167.103.34.103", "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "US" },
-    { "scheme": "http", "addr": "167.103.115.102:8800", "exit_ip": "167.103.115.98", "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "US" },
-    { "scheme": "http", "addr": "185.76.240.32:10001",  "exit_ip": "185.76.240.32",  "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "EU" },
-    { "scheme": "http", "addr": "120.92.108.86:7890",   "exit_ip": "104.250.55.63",  "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "CN relay → US exit" },
-    { "scheme": "http", "addr": "1.231.81.166:3128",    "exit_ip": "1.231.81.166",   "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "KR" },
-    { "scheme": "http", "addr": "152.32.132.190:7890",  "exit_ip": "152.32.132.190", "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "HK" },
-    { "scheme": "http", "addr": "139.135.181.42:8082",  "exit_ip": "208.71.228.115", "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "US relay" }
+    {
+      "scheme": "http",
+      "addr": "37.187.109.70:10111",
+      "exit_ip": "37.187.109.70",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "OVH FR"
+    },
+    {
+      "scheme": "http",
+      "addr": "8.219.195.129:1080",
+      "exit_ip": "8.219.195.129",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "Alibaba Cloud SG"
+    },
+    {
+      "scheme": "http",
+      "addr": "200.174.198.32:8888",
+      "exit_ip": "200.174.198.49",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "BR"
+    },
+    {
+      "scheme": "http",
+      "addr": "167.103.34.108:8800",
+      "exit_ip": "167.103.34.103",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "US"
+    },
+    {
+      "scheme": "http",
+      "addr": "167.103.115.102:8800",
+      "exit_ip": "167.103.115.98",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "US"
+    },
+    {
+      "scheme": "http",
+      "addr": "185.76.240.32:10001",
+      "exit_ip": "185.76.240.32",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "EU"
+    },
+    {
+      "scheme": "http",
+      "addr": "120.92.108.86:7890",
+      "exit_ip": "104.250.55.63",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "CN relay \u2192 US exit"
+    },
+    {
+      "scheme": "http",
+      "addr": "1.231.81.166:3128",
+      "exit_ip": "1.231.81.166",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "KR"
+    },
+    {
+      "scheme": "http",
+      "addr": "152.32.132.190:7890",
+      "exit_ip": "152.32.132.190",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "HK"
+    },
+    {
+      "scheme": "http",
+      "addr": "139.135.181.42:8082",
+      "exit_ip": "208.71.228.115",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "US relay"
+    },
+    {
+      "scheme": "http",
+      "addr": "167.103.115.102:8800",
+      "exit_ip": "167.103.115.97",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (2736ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "177.93.132.244:3128",
+      "exit_ip": "201.23.21.229",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (3341ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "94.23.12.224:8888",
+      "exit_ip": "176.125.228.24",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (8356ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "45.88.0.116:3128",
+      "exit_ip": "213.220.62.62",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (8000ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "20.210.39.153:8561",
+      "exit_ip": "20.78.118.91",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (3069ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "195.200.31.45:3128",
+      "exit_ip": "195.200.31.45",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (3640ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "38.194.246.34:999",
+      "exit_ip": "38.194.246.34",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (6043ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "144.31.140.92:1080",
+      "exit_ip": "144.31.140.92",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (20275ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "34.71.229.255:3128",
+      "exit_ip": "34.71.229.255",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (1619ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "158.255.5.210:1080",
+      "exit_ip": "51.83.161.7",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (1914ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "34.96.238.40:8080",
+      "exit_ip": "34.96.238.40",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (2773ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "2.27.32.81:3128",
+      "exit_ip": "2.27.32.81",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (4546ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "159.223.225.118:8888",
+      "exit_ip": "159.223.225.118",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (747ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "142.171.95.105:3128",
+      "exit_ip": "142.171.95.105",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (20160ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "85.208.51.165:443",
+      "exit_ip": "85.208.51.165",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (17417ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "157.230.178.216:8088",
+      "exit_ip": "157.230.178.216",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (1172ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "2.78.60.10:3129",
+      "exit_ip": "2.78.60.10",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (6116ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "94.131.118.129:1081",
+      "exit_ip": "94.131.118.129",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (8789ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "59.153.16.105:20909",
+      "exit_ip": "59.153.16.105",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (2964ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "147.161.210.140:8800",
+      "exit_ip": "147.161.210.129",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (9099ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "62.113.119.14:8080",
+      "exit_ip": "62.113.119.14",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (4146ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "43.156.132.113:3128",
+      "exit_ip": "129.226.209.9",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (8968ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "185.76.240.242:10002",
+      "exit_ip": "185.76.241.108",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (1280ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "187.86.59.122:80",
+      "exit_ip": "187.86.59.122",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (9743ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "171.244.130.36:3128",
+      "exit_ip": "14.187.213.5",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (2172ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "212.58.132.5:8888",
+      "exit_ip": "212.58.132.5",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (2303ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "77.110.113.24:40000",
+      "exit_ip": "77.110.113.24",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (16671ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "20.27.11.248:8561",
+      "exit_ip": "20.27.11.248",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (3186ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "45.167.125.21:999",
+      "exit_ip": "45.167.125.21",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (9150ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "178.212.12.162:3128",
+      "exit_ip": "178.212.12.162",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (10398ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "158.160.215.167:8127",
+      "exit_ip": "170.168.253.16",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (9966ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "62.76.142.252:1080",
+      "exit_ip": "64.227.113.60",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (1038ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "185.191.236.162:3128",
+      "exit_ip": "185.191.236.162",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (2453ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "203.205.49.2:10091",
+      "exit_ip": "203.205.49.94",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (12453ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "14.225.240.23:8562",
+      "exit_ip": "14.225.240.23",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (23655ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "2.27.18.184:1080",
+      "exit_ip": "2.27.18.184",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (1365ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "45.140.147.155:1082",
+      "exit_ip": "45.140.147.155",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (832ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "158.160.215.167:8123",
+      "exit_ip": "195.19.170.219",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (2880ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "20.78.118.91:8561",
+      "exit_ip": "20.44.138.66",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (2814ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "20.210.39.153:8561",
+      "exit_ip": "20.78.26.206",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (1847ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "112.209.22.22:8082",
+      "exit_ip": "112.209.22.22",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (10416ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "196.204.83.235:1981",
+      "exit_ip": "196.204.83.235",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (2141ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "78.11.96.22:8888",
+      "exit_ip": "78.11.96.22",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (8008ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "103.82.23.118:5234",
+      "exit_ip": "171.248.185.14",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (2807ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "185.114.73.2:1080",
+      "exit_ip": "185.114.73.2",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (1938ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "147.161.239.240:8800",
+      "exit_ip": "147.161.239.225",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (694ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "94.131.118.39:1081",
+      "exit_ip": "94.131.118.39",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (8081ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "171.244.130.36:3128",
+      "exit_ip": "1.55.113.131",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (2341ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "20.27.11.248:8561",
+      "exit_ip": "20.27.15.111",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (4726ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "103.133.254.4:3128",
+      "exit_ip": "103.133.254.4",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (5640ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "190.12.150.244:999",
+      "exit_ip": "190.12.150.244",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (4131ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "144.31.25.69:21064",
+      "exit_ip": "144.31.25.69",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (6989ms)"
+    },
+    {
+      "scheme": "http",
+      "addr": "20.78.26.206:8561",
+      "exit_ip": "20.210.39.155",
+      "first_seen": "2026-04-13",
+      "last_ok": "2026-04-13",
+      "notes": "discovered via list-endpoint probe (8239ms)"
+    }
   ]
 }
