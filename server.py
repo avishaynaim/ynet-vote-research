@@ -23,7 +23,12 @@ from flask import Flask, request, make_response, jsonify, send_from_directory
 import requests as req
 
 YNET_BASE = "https://www.ynet.co.il"
-DEFAULT_PROXIES_FILE = "/root/proxies_alive.json"
+# Prefer the repo-tracked alive pool; fall back to the legacy /root path
+# for backwards compatibility with older local setups.
+_REPO_ALIVE  = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "proxies", "alive.json")
+_LEGACY_ALIVE = "/root/proxies_alive.json"
+DEFAULT_PROXIES_FILE = _REPO_ALIVE if os.path.exists(_REPO_ALIVE) else _LEGACY_ALIVE
 
 # ---------------------------------------------------------------------------
 # Config loader
