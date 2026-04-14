@@ -1,0 +1,16 @@
+{
+  "description": "Known-working public HTTP/SOCKS proxies that successfully POSTed a vote to Ynet and got a 200 + {\"success\":true} response. Maintained cumulatively across runs.",
+  "last_verified": "2026-04-13T19:00Z",
+  "proxies": [
+    { "scheme": "http", "addr": "37.187.109.70:10111",  "exit_ip": "37.187.109.70",  "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "OVH FR" },
+    { "scheme": "http", "addr": "8.219.195.129:1080",   "exit_ip": "8.219.195.129",  "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "Alibaba Cloud SG" },
+    { "scheme": "http", "addr": "200.174.198.32:8888",  "exit_ip": "200.174.198.49", "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "BR" },
+    { "scheme": "http", "addr": "167.103.34.108:8800",  "exit_ip": "167.103.34.103", "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "US" },
+    { "scheme": "http", "addr": "167.103.115.102:8800", "exit_ip": "167.103.115.98", "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "US" },
+    { "scheme": "http", "addr": "185.76.240.32:10001",  "exit_ip": "185.76.240.32",  "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "EU" },
+    { "scheme": "http", "addr": "120.92.108.86:7890",   "exit_ip": "104.250.55.63",  "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "CN relay → US exit" },
+    { "scheme": "http", "addr": "1.231.81.166:3128",    "exit_ip": "1.231.81.166",   "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "KR" },
+    { "scheme": "http", "addr": "152.32.132.190:7890",  "exit_ip": "152.32.132.190", "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "HK" },
+    { "scheme": "http", "addr": "139.135.181.42:8082",  "exit_ip": "208.71.228.115", "first_seen": "2026-04-13", "last_ok": "2026-04-13", "notes": "US relay" }
+  ]
+}
