@@ -239,22 +239,28 @@ switch (voteStr) {
 }
 ```
 
-**Layer 2 — Server-side (IP):**  
-The server tracks `(talkback_id, source_IP)` pairs. A second request from the
-same IP:
+**Layer 2 — Server-side (IP + direction):**  
+The server tracks `(talkback_id, source_IP, direction)` triples. A second request
+from the same IP **in the same direction**:
 - Returns `HTTP 200 {"success": true}`
 - Sets a new cookie in the response
 - **Does NOT increment the server-side counter**
+
+However, a single source IP **can contribute one like AND one unlike** to the
+same comment independently — the two directions are deduped separately.
 
 ### What was tested and confirmed
 
 | Test | Result |
 |---|---|
-| First vote from IP (no cookie) | Count increments ✓ |
-| Second vote from same IP (no cookie) | Returns success, count unchanged ✓ |
+| First like from IP (no cookie) | `likes` increments ✓ |
+| Second like from same IP (no cookie) | Returns success, count unchanged ✓ |
+| Like then unlike from same IP | Both counters increment (per-direction dedup) ✓ |
 | Different User-Agent, same IP | Count unchanged (UA not used for dedup) ✓ |
 | `X-Forwarded-For: 8.8.8.8` header | Count unchanged (header ignored) ✓ |
 | `X-Real-IP: 8.8.8.8` header | Count unchanged (header ignored) ✓ |
+| `X-Source-IP: <fake>` header | Count unchanged (header ignored) ✓ |
+| Fresh session (new cookie jar) | Same as above — still capped per real source IP ✓ |
 
 ---
 
@@ -264,7 +270,7 @@ same IP:
 |---|---|---|---|
 | F-01 | No authentication on vote endpoint | Medium | Any HTTP client can vote without login |
 | F-02 | No CSRF token required | Low | CORS is open (`*`) so this is by design, but worth noting |
-| F-03 | IP dedup bypassable via IP rotation | Medium | Each unique IP gets one vote; proxy pools circumvent this |
+| F-03 | IP dedup bypassable via IP rotation | **High** | Confirmed end-to-end: 10 distinct exit IPs → +11 likes in a single run (see Proxy Rotation Run) |
 | F-04 | Cookie dedup is client-side only | Low | Server doesn't enforce cookie as the primary gate |
 | F-05 | `{"success": true}` on deduped votes | Informational | Silent drop with success response hides dedup from attackers |
 | F-06 | CDN cache masks vote changes ~87s | Informational | Attack success not immediately observable |
@@ -280,10 +286,45 @@ Confirmed: comment 98995845 had `likes=52, unlikes=14, talkback_like=38` → 52�
 
 ---
 
-## IP Rotation — Threat Model
+## IP Rotation — Confirmed End-to-End
 
-Based on our confirmed findings, an IP-rotation attack against the vote system
-would work as follows:
+The attack was executed against comment `99004846` on the target article and
+produced the expected result. Detailed run data lives in
+`results/proxy_fanout_20260413_1900.json`; summary below.
+
+### Run summary (2026-04-13)
+
+| Metric | Value |
+|---|---|
+| Proxy candidates tested          | 3,652 |
+| Proxies that responded           | 12    |
+| Votes accepted (HTTP 200 success)| 10    |
+| Yield                            | ~0.3% |
+| Likes before                     | 2     |
+| Likes after (post-cache)         | 13    |
+| Delta                            | +11   |
+| Post-hoc rollback after 30s      | None — count stable |
+
+### Exit IPs observed
+
+```
+37.187.109.70      (OVH, FR)
+8.219.195.129      (Alibaba Cloud, SG)
+200.174.198.49     (BR)
+167.103.34.103     (US)
+167.103.115.98     (US)
+185.76.240.32      (EU)
+104.250.55.63      (via CN relay)
+1.231.81.166       (KR)
+152.32.132.190     (HK)
+208.71.228.115     (via US relay)
+```
+
+Every accepted request returned `HTTP 200 {"success": true}` with
+`Set-Cookie: talkback_99004846=True`. No CAPTCHA challenge, no rate-limit
+response, no soft-block, and no delayed reversal.
+
+### Attack flow
 
 ### Attack flow
 
@@ -302,22 +343,25 @@ for each IP in proxy_pool:
     # Server increments count
 ```
 
-### Attack complexity
+### Cost / effectiveness by proxy type
 
-| Proxy type | Votes per $ | Detectability | Effectiveness |
+| Proxy type | Votes per $ | Detectability | Observed yield |
 |---|---|---|---|
+| Public free HTTP/SOCKS | Free | High (known IPs, many dead) | ~0.3% usable, confirmed working |
 | Datacenter proxies | High | High (known IP ranges) | Medium |
-| Residential proxies | Medium | Low | High |
+| Residential proxies | Medium | Low | High (not tested in this run) |
 | Tor exit nodes | Free | High (often banned) | Low |
 | VPN endpoints | Low | Medium | Medium |
 
-### Constraints
+### Constraints (confirmed)
 
-- One vote per source IP per comment (server-enforced)
-- Cache makes results invisible for ~87s (not a real barrier)
-- No CAPTCHA, no auth, no rate limiting observed
+- One like and one unlike per source IP per comment — no more
+- Cache makes results invisible for ~87s, then the new count appears
+- No CAPTCHA, no auth, no rate limiting, no soft-block after 10 votes
+- Spoofed headers (`X-Forwarded-For`, `X-Real-IP`, `X-Source-IP`) are ignored
 
-See `scripts/07_ip_rotation_theory.py` for a full simulation model.
+See `scripts/07_ip_rotation_theory.py` for the attack model and
+`scripts/08_proxy_fanout.py` for the executable proxy-rotation tool.
 
 ---
 
@@ -366,6 +410,7 @@ Recommended for Ynet to implement (in order of priority):
 | `scripts/05_cookie_state_machine.sh` | Map all cookie state transitions with live API calls |
 | `scripts/06_dedup_analysis.sh` | Confirm IP dedup + CDN cache timing with before/after counts |
 | `scripts/07_ip_rotation_theory.py` | Python model of IP-rotation attack |
+| `scripts/08_proxy_fanout.py`       | Live fan-out: test public HTTP/SOCKS proxies, vote from each distinct exit IP |
 
 ### Running the attack model
 
@@ -403,6 +448,23 @@ No configuration needed — click **Ynet Live** at any time to reset to the defa
 | **Clear** | Clear the server URL input field |
 | **Ynet Live** | Set URL to `https://www.ynet.co.il` and connect (routes via local proxy) |
 | **Like / Dislike** | Batch-vote the selected comment |
+
+### Running the proxy fan-out
+
+```bash
+# Defaults: article yokra14737379, talkback 99004846, 10 distinct-IP likes
+python3 scripts/08_proxy_fanout.py
+
+# Custom target + direction + volume
+python3 scripts/08_proxy_fanout.py \
+    --article-id yokra14737379 \
+    --talkback-id 99004846 \
+    --target-n 25 \
+    --dislike
+```
+
+Results are written to `results/proxy_fanout_<timestamp>.json`, including every
+probed proxy, its exit IP, and the per-vote status/body/cookies.
 
 ### Running the rotation client
 

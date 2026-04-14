@@ -1,0 +1,44 @@
+{
+  "run_ts": "2026-04-13T18:59Z",
+  "config": {
+    "article_id": "yokra14737379",
+    "talkback_id": 99004846,
+    "direction": "like",
+    "target_n": 10,
+    "workers": 80,
+    "timeout_sec": 6
+  },
+  "proxy_sources": [
+    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
+    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt",
+    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt",
+    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt"
+  ],
+  "candidates_tested": 3652,
+  "proxies_alive": 12,
+  "votes_accepted": 10,
+  "yield_pct": 0.27,
+  "likes_before": 2,
+  "likes_after":  13,
+  "delta_likes":  11,
+  "stable_after_seconds": 30,
+  "accepted": [
+    { "exit_ip": "37.187.109.70",   "scheme": "http", "proxy": "37.187.109.70:10111",   "status": 200, "body": "{\"success\": true}" },
+    { "exit_ip": "8.219.195.129",   "scheme": "http", "proxy": "8.219.195.129:1080",    "status": 200, "body": "{\"success\": true}" },
+    { "exit_ip": "200.174.198.49",  "scheme": "http", "proxy": "200.174.198.32:8888",   "status": 200, "body": "{\"success\": true}" },
+    { "exit_ip": "167.103.34.103",  "scheme": "http", "proxy": "167.103.34.108:8800",   "status": 200, "body": "{\"success\": true}" },
+    { "exit_ip": "167.103.115.98",  "scheme": "http", "proxy": "167.103.115.102:8800",  "status": 200, "body": "{\"success\": true}" },
+    { "exit_ip": "185.76.240.32",   "scheme": "http", "proxy": "185.76.240.32:10001",   "status": 200, "body": "{\"success\": true}" },
+    { "exit_ip": "104.250.55.63",   "scheme": "http", "proxy": "120.92.108.86:7890",    "status": 200, "body": "{\"success\": true}" },
+    { "exit_ip": "1.231.81.166",    "scheme": "http", "proxy": "1.231.81.166:3128",     "status": 200, "body": "{\"success\": true}" },
+    { "exit_ip": "152.32.132.190",  "scheme": "http", "proxy": "152.32.132.190:7890",   "status": 200, "body": "{\"success\": true}" },
+    { "exit_ip": "208.71.228.115",  "scheme": "http", "proxy": "139.135.181.42:8082",   "status": 200, "body": "{\"success\": true}" }
+  ],
+  "observations": [
+    "Every accepted vote returned HTTP 200 + {\"success\":true} and Set-Cookie: talkback_<id>=True.",
+    "All 10 votes registered to the aggregate count (before=2, after=13, delta=11 including a prior +1 from an earlier attempt).",
+    "Count remained stable 30s after the last vote — no delayed rollback or anti-abuse reversal observed.",
+    "CDN cache TTL of ~87s still applies; the new count was not visible in the list endpoint until the cache window elapsed.",
+    "Dedup is per (source_IP, talkback_id, direction). The same IP can contribute one like AND one unlike independently."
+  ]
+}
