@@ -146,14 +146,34 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
         if request.method == "OPTIONS":
             return preflight()
         article_id = request.args.get("article_id", DEFAULT_ARTICLE)
-        url = (
-            f"{YNET_BASE}/iphone/json/api/talkbacks/list/v2"
-            f"/{article_id}/0/1"
-        )
+
+        # Ynet paginates the talkbacks list. Page 1 returns ~100 items and
+        # `hasMore: 1` if more exist; keep walking until an empty page or
+        # hasMore flips off. Cap at 50 pages as a safety rail.
+        all_items = []
+        seen_ids  = set()
+        sum_talkbacks = None
         try:
-            r = req.get(url, headers=PROXY_HEADERS, timeout=10)
-            r.raise_for_status()
-            items = r.json().get("rss", {}).get("channel", {}).get("item", [])
+            for page in range(1, 51):
+                url = (f"{YNET_BASE}/iphone/json/api/talkbacks/list/v2"
+                       f"/{article_id}/0/{page}")
+                r = req.get(url, headers=PROXY_HEADERS, timeout=10)
+                r.raise_for_status()
+                ch        = r.json().get("rss", {}).get("channel", {}) or {}
+                items     = ch.get("item", []) or []
+                has_more  = ch.get("hasMore")
+                if sum_talkbacks is None:
+                    sum_talkbacks = ch.get("sum_talkbacks")
+                if not items:
+                    break
+                for c in items:
+                    cid = c.get("id")
+                    if cid in seen_ids:
+                        continue
+                    seen_ids.add(cid)
+                    all_items.append(c)
+                if not has_more:
+                    break
             comments = [{
                 "id":          c["id"],
                 "author":      c.get("author", ""),
@@ -164,10 +184,11 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
                 "net":         c.get("talkback_like", 0),
                 "recommended": c.get("recommended", False),
                 "vote_count":  c.get("likes", 0),
-            } for c in items]
+            } for c in all_items]
             return cors(make_response(jsonify({
-                "comments": comments,
-                "total":    len(comments),
+                "comments":      comments,
+                "total":         len(comments),
+                "sum_talkbacks": sum_talkbacks,
             })))
         except Exception as e:
             return cors(make_response(jsonify({"error": str(e)}), 502))
