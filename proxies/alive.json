@@ -1,0 +1,298 @@
+[
+  {
+    "scheme": "http",
+    "addr": "78.11.96.22:8888",
+    "exit_ip": "78.11.96.22",
+    "ynet_ms": 8008,
+    "check_status": 200,
+    "check_ms": 888,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "94.131.118.129:1081",
+    "exit_ip": "94.131.118.129",
+    "ynet_ms": 8789,
+    "check_status": 200,
+    "check_ms": 1214,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "2.27.18.184:1080",
+    "exit_ip": "2.27.18.184",
+    "ynet_ms": 1365,
+    "check_status": 200,
+    "check_ms": 1331,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "85.239.59.252:7890",
+    "exit_ip": "85.239.59.252",
+    "ynet_ms": 3773,
+    "check_status": 200,
+    "check_ms": 1520,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "155.212.188.205:8080",
+    "exit_ip": "100.42.186.163",
+    "ynet_ms": 2314,
+    "check_status": 200,
+    "check_ms": 1926,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "20.78.118.91:8561",
+    "exit_ip": "20.44.138.66",
+    "ynet_ms": 2814,
+    "check_status": 200,
+    "check_ms": 1945,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "20.78.26.206:8561",
+    "exit_ip": "20.210.39.155",
+    "ynet_ms": 8239,
+    "check_status": 200,
+    "check_ms": 2026,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "45.186.6.104:3128",
+    "exit_ip": "45.186.6.104",
+    "ynet_ms": 5748,
+    "check_status": 200,
+    "check_ms": 2092,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "167.103.34.108:8800",
+    "exit_ip": "167.103.34.103",
+    "first_seen": "2026-04-13",
+    "last_ok": "2026-04-13",
+    "notes": "US",
+    "check_status": 200,
+    "check_ms": 2122,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "49.229.100.235:8080",
+    "exit_ip": "49.229.100.235",
+    "ynet_ms": 5540,
+    "check_status": 200,
+    "check_ms": 2122,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "212.58.132.5:8888",
+    "exit_ip": "212.58.132.5",
+    "ynet_ms": 2303,
+    "check_status": 200,
+    "check_ms": 2341,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "167.103.31.122:8800",
+    "exit_ip": "167.103.30.221",
+    "ynet_ms": 6122,
+    "check_status": 200,
+    "check_ms": 2348,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "45.167.125.21:999",
+    "exit_ip": "45.167.125.21",
+    "ynet_ms": 9150,
+    "check_status": 200,
+    "check_ms": 2453,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "103.10.231.189:8080",
+    "exit_ip": "61.91.162.126",
+    "ynet_ms": 4216,
+    "check_status": 200,
+    "check_ms": 2535,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "167.103.144.127:8800",
+    "exit_ip": "167.103.144.126",
+    "ynet_ms": 8511,
+    "check_status": 200,
+    "check_ms": 2549,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "147.161.210.140:8800",
+    "exit_ip": "147.161.210.129",
+    "ynet_ms": 9099,
+    "check_status": 200,
+    "check_ms": 2565,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "120.92.108.86:7890",
+    "exit_ip": "104.250.55.63",
+    "first_seen": "2026-04-13",
+    "last_ok": "2026-04-13",
+    "notes": "CN relay → US exit",
+    "check_status": 200,
+    "check_ms": 2624,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "167.103.115.102:8800",
+    "exit_ip": "167.103.115.97",
+    "ynet_ms": 2736,
+    "check_status": 200,
+    "check_ms": 2800,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "20.210.39.153:8561",
+    "exit_ip": "20.78.118.91",
+    "ynet_ms": 3069,
+    "check_status": 200,
+    "check_ms": 2954,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "168.110.52.228:3128",
+    "exit_ip": "168.110.52.228",
+    "ynet_ms": 5377,
+    "check_status": 200,
+    "check_ms": 3452,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "190.12.150.244:999",
+    "exit_ip": "190.12.150.244",
+    "ynet_ms": 4131,
+    "check_status": 200,
+    "check_ms": 3625,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "171.244.130.36:3128",
+    "exit_ip": "14.187.213.5",
+    "ynet_ms": 2172,
+    "check_status": 200,
+    "check_ms": 4784,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "162.240.154.26:3128",
+    "exit_ip": "162.240.154.26",
+    "ynet_ms": 8022,
+    "check_status": 200,
+    "check_ms": 6514,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "185.76.240.242:10002",
+    "exit_ip": "185.76.241.108",
+    "ynet_ms": 1280,
+    "check_status": 200,
+    "check_ms": 6836,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "38.194.246.34:999",
+    "exit_ip": "38.194.246.34",
+    "ynet_ms": 6043,
+    "check_status": 200,
+    "check_ms": 7376,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "91.108.243.203:3128",
+    "exit_ip": "91.108.243.203",
+    "ynet_ms": 15633,
+    "check_status": 200,
+    "check_ms": 7429,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "185.191.236.162:3128",
+    "exit_ip": "185.191.236.162",
+    "ynet_ms": 2453,
+    "check_status": 200,
+    "check_ms": 8103,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "159.223.225.118:8888",
+    "exit_ip": "159.223.225.118",
+    "ynet_ms": 747,
+    "check_status": 200,
+    "check_ms": 8687,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "1.231.81.166:3128",
+    "exit_ip": "1.231.81.166",
+    "first_seen": "2026-04-13",
+    "last_ok": "2026-04-13",
+    "notes": "KR",
+    "check_status": 200,
+    "check_ms": 9163,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "200.174.198.32:8888",
+    "exit_ip": "200.174.198.49",
+    "first_seen": "2026-04-13",
+    "last_ok": "2026-04-13",
+    "notes": "BR",
+    "check_status": 200,
+    "check_ms": 9965,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "103.3.246.71:3128",
+    "exit_ip": "103.3.246.71",
+    "ynet_ms": 9253,
+    "check_status": 200,
+    "check_ms": 11558,
+    "alive": true
+  },
+  {
+    "scheme": "http",
+    "addr": "158.255.5.210:1080",
+    "exit_ip": "51.83.161.7",
+    "ynet_ms": 1914,
+    "check_status": 200,
+    "check_ms": 15558,
+    "alive": true
+  }
+]
