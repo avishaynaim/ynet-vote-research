@@ -57,6 +57,43 @@ def parse_args():
         dest="log_level",
         help="Console log verbosity (file always gets DEBUG)",
     )
+    parser.add_argument(
+        "--proxies-file", default="/root/unique_working_proxies.json",
+        dest="proxies_file",
+        help="JSON list of working proxies ({scheme,addr,...}). "
+             "If present, votes go directly to ynet via rotating proxies.",
+    )
+    parser.add_argument(
+        "--ynet-base", default="https://www.ynet.co.il",
+        dest="ynet_base",
+        help="Real ynet origin for direct (proxy-mode) requests",
+    )
+    parser.add_argument(
+        "--no-proxies", action="store_true", dest="no_proxies",
+        help="Disable proxy mode even if proxies-file exists "
+             "(falls back to localhost server + fake X-Source-IP)",
+    )
+    parser.add_argument(
+        "--proxy-timeout", type=int, default=20, dest="proxy_timeout",
+        help="HTTP timeout in seconds for proxied requests",
+    )
+    parser.add_argument(
+        "--list-comments", action="store_true", dest="list_comments",
+        help="Fetch and print all comments for the article, then exit.",
+    )
+    parser.add_argument(
+        "--target-id", type=int, default=None, dest="target_id",
+        help="Talkback ID to target. When set, runs ONLY a targeted campaign "
+             "instead of the default test suite.",
+    )
+    parser.add_argument(
+        "--count", type=int, default=None, dest="count",
+        help="Number of votes to cast on --target-id (capped at available proxies).",
+    )
+    parser.add_argument(
+        "--action", choices=["like", "unlike"], default="like", dest="action",
+        help="Vote direction for --target-id.",
+    )
     return parser.parse_args()
 
 # ---------------------------------------------------------------------------
@@ -90,20 +127,38 @@ def build_cfg(args) -> dict:
         pool_size = min(pool_size, 50)
 
     endpoints = raw.get("endpoints", {})
+    vote_tmpl = endpoints.get("vote", "/iphone/json/api/talkbacks/vote")
+    list_tmpl = endpoints.get("list", "/iphone/json/api/talkbacks/list/v2/{article_id}/{sort}/{page}")
 
-    def ep(key: str, fallback: str) -> str:
-        tmpl = endpoints.get(key, fallback)
-        return base + tmpl.format(article_id=article_id, sort="0", page="1")
+    def fmt(tmpl: str) -> str:
+        return tmpl.format(article_id=article_id, sort="0", page="1")
+
+    ynet_base = args.ynet_base.rstrip("/")
+    proxies   = [] if args.no_proxies else load_proxies(args.proxies_file)
+
+    # Proxy mode: hit ynet directly through rotating proxies.
+    # Legacy mode: hit localhost CORS server with fake X-Source-IP headers.
+    if proxies:
+        vote_url = ynet_base + vote_tmpl
+        list_url = ynet_base + fmt(list_tmpl)
+    else:
+        vote_url = base + vote_tmpl
+        list_url = base + fmt(list_tmpl)
 
     return {
-        "base":        base,
-        "article_id":  article_id,
-        "cache_ttl":   cache_ttl,
-        "pool_size":   pool_size,
-        "vote_url":    base + endpoints.get("vote",  "/iphone/json/api/talkbacks/vote"),
-        "list_url":    ep("list",  "/iphone/json/api/talkbacks/list/v2/{article_id}/{sort}/{page}"),
-        "config_url":  base + endpoints.get("config", "/api/config"),
-        "config_path": args.config,
+        "base":          base,
+        "ynet_base":     ynet_base,
+        "article_id":    article_id,
+        "cache_ttl":     cache_ttl,
+        "pool_size":     pool_size,
+        "vote_url":      vote_url,
+        "list_url":      list_url,
+        "config_url":    base + endpoints.get("config", "/api/config"),
+        "config_path":   args.config,
+        "proxies":       proxies,
+        "proxies_file":  args.proxies_file,
+        "proxy_timeout": args.proxy_timeout,
+        "proxy_mode":    bool(proxies),
     }
 
 # ---------------------------------------------------------------------------
@@ -154,6 +209,41 @@ def build_pool(size: int) -> list:
             break
     return pool[:size]
 
+
+def load_proxies(path: str) -> list:
+    """Load working proxies JSON → list of dicts with a requests-compatible 'proxies' mapping."""
+    if not path or not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    out = []
+    for p in data:
+        scheme = p.get("scheme", "http")
+        addr   = p.get("addr")
+        if not addr:
+            continue
+        url = f"{scheme}://{addr}"
+        out.append({
+            "label":   p.get("exit_ip") or addr,
+            "addr":    addr,
+            "proxies": {"http": url, "https": url},
+        })
+    return out
+
+
+def build_source_pool(cfg: dict, log) -> list:
+    """Return list of {label, source_ip, proxy} — real proxies if available, else fake IPs."""
+    proxies = cfg.get("proxies") or []
+    size    = cfg["pool_size"]
+    if proxies:
+        pool = proxies[:size]
+        log.info("Using %d real proxies from %s", len(pool), cfg.get("proxies_file"))
+        return [{"label": p["label"], "source_ip": p["label"], "proxy": p["proxies"]}
+                for p in pool]
+    fake = build_pool(size)
+    log.warning("No proxies — falling back to fake X-Source-IP (will not affect real ynet)")
+    return [{"label": ip, "source_ip": ip, "proxy": None} for ip in fake]
+
 # ---------------------------------------------------------------------------
 # HTTP helpers
 # ---------------------------------------------------------------------------
@@ -197,9 +287,10 @@ def _safe_json(resp: requests.Response, context: str) -> dict | list | None:
         return None
 
 def _get(url: str, **kwargs) -> requests.Response:
+    kwargs.setdefault("timeout", 10)
     _log_request("GET", url, **kwargs)
     try:
-        resp = requests.get(url, timeout=10, **kwargs)
+        resp = requests.get(url, **kwargs)
     except Exception as exc:
         _http_log.error("GET %s failed: %s", url, exc)
         _http_log.debug(traceback.format_exc())
@@ -208,9 +299,10 @@ def _get(url: str, **kwargs) -> requests.Response:
     return resp
 
 def _post(url: str, **kwargs) -> requests.Response:
+    kwargs.setdefault("timeout", 10)
     _log_request("POST", url, **kwargs)
     try:
-        resp = requests.post(url, timeout=10, **kwargs)
+        resp = requests.post(url, **kwargs)
     except Exception as exc:
         _http_log.error("POST %s failed: %s", url, exc)
         _http_log.debug(traceback.format_exc())
@@ -294,15 +386,22 @@ def get_admin_comment(talkback_id: int, cfg: dict, log) -> dict:
 
 def cast_vote(talkback_id: int, source_ip: str, cfg: dict, log,
               like: bool = True, vote_type: str = "2state",
-              cookie: str = None) -> dict:
+              cookie: str = None, proxy: dict = None) -> dict:
     action = "LIKE" if like else "UNLIKE"
-    log.debug("cast_vote  id=%d  ip=%s  action=%s  vote_type=%s  cookie=%s",
-              talkback_id, source_ip, action, vote_type, cookie)
+    log.debug("cast_vote  id=%d  ip=%s  action=%s  vote_type=%s  cookie=%s  proxy=%s",
+              talkback_id, source_ip, action, vote_type, cookie,
+              proxy.get("http") if proxy else None)
 
+    in_proxy_mode = bool(proxy) or cfg.get("proxy_mode")
+    origin = cfg["ynet_base"] if in_proxy_mode else cfg["base"]
     headers = {
-        "Content-Type":   "application/json",
-        "Origin":         cfg["base"],
-        "X-Source-IP": source_ip,
+        "Content-Type": "application/json",
+        "Origin":       origin,
+        "Referer":      f"{origin}/news/article/{cfg['article_id']}",
+        "User-Agent":   ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                         "AppleWebKit/537.36 (KHTML, like Gecko) "
+                         "Chrome/124.0.0.0 Safari/537.36"),
+        "X-Source-IP":  source_ip,
     }
     if cookie:
         headers["Cookie"] = f"talkback_{talkback_id}={cookie}"
@@ -315,8 +414,13 @@ def cast_vote(talkback_id: int, source_ip: str, cfg: dict, log,
         "vote_type":       vote_type,
     }
 
+    post_kwargs = {"json": payload, "headers": headers}
+    if proxy:
+        post_kwargs["proxies"] = proxy
+        post_kwargs["timeout"] = cfg.get("proxy_timeout", 20)
+
     try:
-        resp = _post(cfg["vote_url"], json=payload, headers=headers)
+        resp = _post(cfg["vote_url"], **post_kwargs)
     except Exception as exc:
         log.error("cast_vote FAILED  id=%d  ip=%s  error=%s", talkback_id, source_ip, exc)
         raise
@@ -399,7 +503,7 @@ def test_boost_top_comment(cfg: dict, log, targets: dict):
     log.info("TEST A START  server=%s", cfg["base"])
     reset(cfg, log)
 
-    pool   = build_pool(cfg["pool_size"])
+    pool   = build_source_pool(cfg, log)
     target = targets["top_liked"][0]
     tid    = target["id"]
 
@@ -416,9 +520,10 @@ def test_boost_top_comment(cfg: dict, log, targets: dict):
     print(f"\n  {'IP':<18} {'HTTP':>5}  {'Real likes after':>16}")
     print(f"  {'-'*45}")
 
-    for idx, ip in enumerate(pool, 1):
+    for idx, src in enumerate(pool, 1):
+        ip = src["label"]
         try:
-            r     = cast_vote(tid, ip, cfg, log, like=True)
+            r     = cast_vote(tid, src["source_ip"], cfg, log, like=True, proxy=src["proxy"])
             stats = get_admin_comment(tid, cfg, log)
             log.info("TEST A  [%d/%d]  ip=%s  http=%d  likes=%d  set_cookie=%s",
                      idx, len(pool), ip, r["status"], stats["likes"], r["set_cookie"])
@@ -443,7 +548,7 @@ def test_suppress_comment(cfg: dict, log, targets: dict):
     log.info("TEST B START  server=%s", cfg["base"])
     reset(cfg, log)
 
-    pool   = build_pool(cfg["pool_size"])
+    pool   = build_source_pool(cfg, log)
     target = targets["top_disputed"][0]
     tid    = target["id"]
 
@@ -458,9 +563,10 @@ def test_suppress_comment(cfg: dict, log, targets: dict):
           f"net={target.get('talkback_like',0)}")
     print(f"\nRotating {len(pool)} IPs → unlikes...")
 
-    for idx, ip in enumerate(pool, 1):
+    for idx, src in enumerate(pool, 1):
+        ip = src["label"]
         try:
-            r = cast_vote(tid, ip, cfg, log, like=False)
+            r = cast_vote(tid, src["source_ip"], cfg, log, like=False, proxy=src["proxy"])
             log.info("TEST B  [%d/%d]  ip=%s  http=%d  set_cookie=%s",
                      idx, len(pool), ip, r["status"], r["set_cookie"])
         except Exception as exc:
@@ -483,7 +589,7 @@ def test_manufacture_zero_comment(cfg: dict, log, targets: dict):
     log.info("TEST C START  server=%s", cfg["base"])
     reset(cfg, log)
 
-    pool = build_pool(cfg["pool_size"])
+    pool = build_source_pool(cfg, log)
 
     if not targets["zero"]:
         log.warning("TEST C SKIP — no zero-vote comments found")
@@ -500,9 +606,10 @@ def test_manufacture_zero_comment(cfg: dict, log, targets: dict):
     print(f"Before: likes=0 unlikes=0 net=0")
     print(f"\nRotating {len(pool)} IPs → likes...")
 
-    for idx, ip in enumerate(pool, 1):
+    for idx, src in enumerate(pool, 1):
+        ip = src["label"]
         try:
-            r = cast_vote(tid, ip, cfg, log, like=True)
+            r = cast_vote(tid, src["source_ip"], cfg, log, like=True, proxy=src["proxy"])
             log.info("TEST C  [%d/%d]  ip=%s  http=%d  set_cookie=%s",
                      idx, len(pool), ip, r["status"], r["set_cookie"])
         except Exception as exc:
@@ -525,17 +632,19 @@ def test_dedup_still_works(cfg: dict, log, targets: dict):
 
     target = targets["top_liked"][0]
     tid    = target["id"]
-    ip     = build_pool(1)[0]   # use first IP from pool
+    src    = build_source_pool(cfg, log)[0]
+    ip     = src["label"]
+    proxy  = src["proxy"]
 
     log.info("TEST D  target=%d  ip=%s", tid, ip)
 
-    r1 = cast_vote(tid, ip, cfg, log, like=True)
+    r1 = cast_vote(tid, src["source_ip"], cfg, log, like=True, proxy=proxy)
     s1 = get_admin_comment(tid, cfg, log)
     log.info("TEST D  vote 1  ip=%s  http=%d  likes=%d  set_cookie=%s",
              ip, r1["status"], s1["likes"], r1["set_cookie"])
     print(f"\nVote 1 from {ip}: HTTP {r1['status']} → likes={s1['likes']}")
 
-    r2 = cast_vote(tid, ip, cfg, log, like=True)
+    r2 = cast_vote(tid, src["source_ip"], cfg, log, like=True, proxy=proxy)
     s2 = get_admin_comment(tid, cfg, log)
     changed = s2["likes"] != s1["likes"]
     log.info("TEST D  vote 2  ip=%s  http=%d  likes=%d  set_cookie=%s  count_changed=%s",
@@ -548,6 +657,76 @@ def test_dedup_still_works(cfg: dict, log, targets: dict):
 
     print(f"Vote 2 from {ip}: HTTP {r2['status']} → likes={s2['likes']} (no change)")
     print(f"\nConclusion: {s2['vote_count']} unique IP(s) registered despite 2 attempts")
+
+
+def list_comments_only(cfg: dict, log):
+    separator("COMMENTS — current snapshot from ynet", log)
+    comments = get_all_comments(cfg, log)
+    print(f"\n{len(comments)} comments for article {cfg['article_id']}\n")
+    print(f"  {'#':<4} {'ID':<12} {'likes':>6} {'unlikes':>8} {'net':>6}  "
+          f"{'author':<22}  text[:70]")
+    print(f"  {'-'*130}")
+    for i, c in enumerate(comments, 1):
+        print(f"  {i:<4} {c['id']:<12} {c['likes']:>6} {c.get('unlikes',0):>8} "
+              f"{c.get('talkback_like',0):>6}  {c.get('author','')[:20]:<22}  "
+              f"{c.get('text','')[:70]}")
+    print()
+    return comments
+
+
+def targeted_campaign(cfg: dict, log, target_id: int, count: int, like: bool):
+    action_word = "LIKE" if like else "UNLIKE"
+    separator(f"TARGETED {action_word} CAMPAIGN — comment {target_id}", log)
+
+    before = get_comment(target_id, cfg, log)
+    if before is None:
+        print(f"\n[ERROR] comment {target_id} not found in current snapshot.")
+        log.error("Targeted campaign: comment %d not in snapshot", target_id)
+        return
+    print(f"\nTarget : {target_id}")
+    print(f"Author : {before.get('author','')}")
+    print(f"Text   : {before.get('text','')[:100]}")
+    print(f"Before : likes={before['likes']}  unlikes={before.get('unlikes',0)}  "
+          f"net={before.get('talkback_like',0)}")
+
+    full_pool = build_source_pool(cfg, log)
+    if not full_pool:
+        print("\n[ERROR] No proxies available.")
+        return
+    pool = full_pool[:count]
+    print(f"\nCasting {len(pool)} {action_word.lower()}s via rotating proxies...\n")
+    print(f"  {'#':<4} {'proxy_ip':<22} {'HTTP':>5}  {'likes_after':>12}")
+    print(f"  {'-'*55}")
+
+    ok = 0
+    fail = 0
+    for idx, src in enumerate(pool, 1):
+        ip = src["label"]
+        try:
+            r = cast_vote(target_id, src["source_ip"], cfg, log, like=like, proxy=src["proxy"])
+            after_live = get_admin_comment(target_id, cfg, log)
+            status = r["status"]
+            if status == 200:
+                ok += 1
+            else:
+                fail += 1
+            log.info("TARGETED [%d/%d]  proxy=%s  http=%d  likes=%d  unlikes=%d",
+                     idx, len(pool), ip, status, after_live["likes"], after_live["unlikes"])
+            print(f"  {idx:<4} {ip:<22} {status:>5}  likes={after_live['likes']:>4}"
+                  f" unlikes={after_live['unlikes']:>4}")
+        except Exception as exc:
+            fail += 1
+            log.error("TARGETED [%d/%d]  proxy=%s  EXCEPTION: %s", idx, len(pool), ip, exc)
+            print(f"  {idx:<4} {ip:<22}   ERR  {exc}")
+
+    after = get_admin_comment(target_id, cfg, log)
+    print(f"\nFinal  : likes={after['likes']}  unlikes={after['unlikes']}  "
+          f"net={after['net']}")
+    print(f"Delta  : likes +{after['likes']-before['likes']}  "
+          f"unlikes +{after['unlikes']-before.get('unlikes',0)}")
+    print(f"Proxies: {ok} accepted / {fail} failed / {len(pool)} total")
+    log.info("TARGETED DONE  id=%d  ok=%d  fail=%d  before_likes=%d  after_likes=%d",
+             target_id, ok, fail, before["likes"], after["likes"])
 
 
 def test_validation(cfg: dict, log):
@@ -563,13 +742,20 @@ def test_validation(cfg: dict, log):
                                "vote_type": "4state"}),
     ]
 
-    probe_ip = build_pool(1)[0]
+    probe_src = build_source_pool(cfg, log)[0]
+    probe_ip  = probe_src["label"]
+    probe_proxy = probe_src["proxy"]
     for label, payload in cases:
         log.info("TEST E  case='%s'  payload=%s", label, payload)
         try:
-            resp = _post(cfg["vote_url"], json=payload,
-                         headers={"Content-Type": "application/json",
-                                  "X-Source-IP": probe_ip})
+            post_kwargs = {
+                "json": payload,
+                "headers": {"Content-Type": "application/json", "X-Source-IP": probe_ip},
+            }
+            if probe_proxy:
+                post_kwargs["proxies"] = probe_proxy
+                post_kwargs["timeout"] = cfg.get("proxy_timeout", 20)
+            resp = _post(cfg["vote_url"], **post_kwargs)
             body = resp.json() if resp.text else {}
             log.info("TEST E  case='%s'  http=%d  body=%s",
                      label, resp.status_code, json.dumps(body, ensure_ascii=False))
@@ -608,18 +794,23 @@ if __name__ == "__main__":
     print(f"  Log     : {LOG_FILE}")
     print("=" * 65)
 
-    # Check server reachability, then probe the list endpoint
-    try:
-        requests.get(cfg["base"], timeout=5)
-        log.info("Server reachable at %s", cfg["base"])
-    except Exception as exc:
-        log.error("Cannot reach server at %s — %s", cfg["base"], exc)
-        log.debug(traceback.format_exc())
-        print(f"\n[ERROR] Cannot connect to server at {cfg['base']}")
-        print(f"        {exc}")
-        print(f"        Check --server or config.json server.host / server.port")
-        print(f"        Full details in log: {LOG_FILE}")
-        sys.exit(1)
+    # Check server reachability — only needed in legacy (no-proxy) mode
+    if not cfg.get("proxy_mode"):
+        try:
+            requests.get(cfg["base"], timeout=5)
+            log.info("Server reachable at %s", cfg["base"])
+        except Exception as exc:
+            log.error("Cannot reach server at %s — %s", cfg["base"], exc)
+            log.debug(traceback.format_exc())
+            print(f"\n[ERROR] Cannot connect to server at {cfg['base']}")
+            print(f"        {exc}")
+            print(f"        Check --server or config.json server.host / server.port")
+            print(f"        Full details in log: {LOG_FILE}")
+            sys.exit(1)
+    else:
+        log.info("Proxy mode ON — %d proxies, hitting ynet directly at %s",
+                 len(cfg["proxies"]), cfg["ynet_base"])
+        print(f"  Proxies : {len(cfg['proxies'])} (→ {cfg['ynet_base']})")
 
     # Probe the list endpoint before running tests
     log.info("Probing list endpoint: %s", cfg["list_url"])
@@ -650,12 +841,25 @@ if __name__ == "__main__":
         sys.exit(1)
 
     try:
-        targets = show_targeting_analysis(cfg, log)
-        test_boost_top_comment(cfg, log, targets)
-        test_suppress_comment(cfg, log, targets)
-        test_manufacture_zero_comment(cfg, log, targets)
-        test_dedup_still_works(cfg, log, targets)
-        test_validation(cfg, log)
+        if args.list_comments:
+            list_comments_only(cfg, log)
+        elif args.target_id is not None:
+            if args.count is None or args.count < 1:
+                print("\n[ERROR] --target-id requires --count N (N >= 1)")
+                sys.exit(1)
+            max_n = len(cfg["proxies"]) if cfg.get("proxy_mode") else args.count
+            n = min(args.count, max_n)
+            if n < args.count:
+                print(f"[WARN] Only {max_n} proxies available — capping count from "
+                      f"{args.count} to {n}")
+            targeted_campaign(cfg, log, args.target_id, n, like=(args.action == "like"))
+        else:
+            targets = show_targeting_analysis(cfg, log)
+            test_boost_top_comment(cfg, log, targets)
+            test_suppress_comment(cfg, log, targets)
+            test_manufacture_zero_comment(cfg, log, targets)
+            test_dedup_still_works(cfg, log, targets)
+            test_validation(cfg, log)
     except Exception as exc:
         log.critical("Unhandled exception: %s\n%s", exc, traceback.format_exc())
         print(f"\n[FATAL] {exc}")
@@ -665,6 +869,5 @@ if __name__ == "__main__":
     log.info("=== All tests complete ===")
     print("\n" + "=" * 65)
     print(f"  Done.")
-    print(f"  Admin stats : GET {cfg['stats_url']}")
     print(f"  Full log    : {LOG_FILE}")
     print("=" * 65 + "\n")
