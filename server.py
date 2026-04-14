@@ -14,13 +14,16 @@ import os
 import sys
 import argparse
 import json
+import random
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from flask import Flask, request, make_response, jsonify, send_from_directory
 import requests as req
 
 YNET_BASE = "https://www.ynet.co.il"
+DEFAULT_PROXIES_FILE = "/root/proxies_alive.json"
 
 # ---------------------------------------------------------------------------
 # Config loader
@@ -30,6 +33,26 @@ def load_config(path: str) -> dict:
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
+
+def load_proxies(path: str) -> list:
+    """Return list of requests-compatible {'http','https'} proxy dicts."""
+    if not path or not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    out = []
+    for p in data:
+        scheme = p.get("scheme", "http")
+        addr   = p.get("addr")
+        if not addr:
+            continue
+        url = f"{scheme}://{addr}"
+        out.append({
+            "label":   p.get("exit_ip") or addr,
+            "proxies": {"http": url, "https": url},
+        })
+    return out
+
 # ---------------------------------------------------------------------------
 # App factory
 # ---------------------------------------------------------------------------
@@ -38,6 +61,14 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
     app = Flask(__name__)
 
     DEFAULT_ARTICLE = cfg["article_id"]
+
+    # ── Proxy pool (for outbound votes to ynet) ──────────────────────────────
+    proxies_file = cfg.get("proxies_file", DEFAULT_PROXIES_FILE)
+    proxy_pool   = load_proxies(proxies_file)
+    proxy_timeout = int(cfg.get("proxy_timeout", 20))
+    proxy_workers = int(cfg.get("proxy_workers", 20))
+    print(f"  Proxies : {len(proxy_pool)} loaded from {proxies_file}")
+    print(f"  Workers : {proxy_workers} parallel  |  timeout {proxy_timeout}s")
 
     # ── Client-log sink ──────────────────────────────────────────────────────
     # Every event the browser emits (clicks, input changes, HTTP request/response,
@@ -166,25 +197,61 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
         }
         headers = {**PROXY_HEADERS, "Content-Type": "application/json"}
 
-        sent = ok = errors = 0
-        for _ in range(count):
+        # Randomize proxy order each batch (no deterministic pattern)
+        # and fan out in parallel. Stop as soon as `count` HTTP 200s land;
+        # any still-pending proxies are cancelled.
+        if proxy_pool:
+            shuffled = random.sample(proxy_pool, len(proxy_pool))
+            used_proxies = True
+        else:
+            shuffled = [None] * count
+            used_proxies = False
+
+        def _one(entry):
+            px_label = entry["label"] if entry else "direct"
             try:
-                r = req.post(url, json=payload, headers=headers, timeout=10)
-                ok      += 1 if r.status_code == 200 else 0
-                errors  += 1 if r.status_code != 200 else 0
-            except Exception:
-                errors += 1
-            sent += 1
+                if entry:
+                    r = req.post(url, json=payload, headers=headers,
+                                 proxies=entry["proxies"], timeout=proxy_timeout)
+                else:
+                    r = req.post(url, json=payload, headers=headers, timeout=10)
+                return {"proxy": px_label, "status": r.status_code,
+                        "ok": r.status_code == 200}
+            except Exception as exc:
+                return {"proxy": px_label,
+                        "status": f"ERR:{type(exc).__name__}", "ok": False}
+
+        sent = ok = errors = 0
+        per_proxy = []
+        ex = ThreadPoolExecutor(max_workers=proxy_workers)
+        try:
+            futures = [ex.submit(_one, e) for e in shuffled]
+            for fut in as_completed(futures):
+                res = fut.result()
+                per_proxy.append({"proxy": res["proxy"], "status": res["status"]})
+                sent += 1
+                if res["ok"]:
+                    ok += 1
+                else:
+                    errors += 1
+                if ok >= count:
+                    break
+        finally:
+            # Don't wait for in-flight requests still running.
+            ex.shutdown(wait=False, cancel_futures=True)
 
         return cors(make_response(jsonify({
-            "talkback_id": talkback_id,
-            "article_id":  article_id,
-            "like":        like,
-            "sent":        sent,
-            "ok":          ok,
-            "errors":      errors,
-            "note":        "Ynet returns success even for deduped votes. "
-                           "Actual count change visible after CDN cache expires (~87s).",
+            "talkback_id":   talkback_id,
+            "article_id":    article_id,
+            "like":          like,
+            "sent":          sent,
+            "ok":            ok,
+            "errors":        errors,
+            "used_proxies":  used_proxies,
+            "pool_size":     len(proxy_pool),
+            "per_proxy":     per_proxy,
+            "note":          "Ynet returns success even for deduped votes. "
+                             "Actual count change visible after CDN cache expires (~87s).",
         })))
 
     # ── Aliases — same handlers without /proxy prefix (backward compat + client)
