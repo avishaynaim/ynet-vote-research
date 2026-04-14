@@ -29,9 +29,15 @@ import threading
 import time
 import urllib.request
 
-ROOT              = "/root"
-MASTER_FILE       = os.path.join(ROOT, "unique_working_proxies.json")
-ALIVE_FILE        = os.path.join(ROOT, "proxies_alive.json")
+REPO_ROOT         = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+PROXIES_DIR       = os.path.join(REPO_ROOT, "proxies")
+# Default to repo-relative paths so the script works in both local and
+# remote (checked-out repo) environments. Overridable via --master-file /
+# --alive-file. Legacy /root/*.json paths are merged on first run.
+MASTER_FILE       = os.path.join(PROXIES_DIR, "unique.json")
+ALIVE_FILE        = os.path.join(PROXIES_DIR, "alive.json")
+LEGACY_MASTER     = "/root/unique_working_proxies.json"
+LEGACY_ALIVE      = "/root/proxies_alive.json"
 
 IP_CHECK_URL      = "https://api.ipify.org?format=json"
 YNET_LIST_URL     = "https://www.ynet.co.il/iphone/json/api/talkbacks/list/v2/yokra14737379/0/1"
@@ -128,9 +134,13 @@ def gather_candidates(verbose=True):
     return candidates
 
 
-def load_known():
+def load_known(master_file=None, alive_file=None):
+    master_file = master_file or MASTER_FILE
+    alive_file  = alive_file  or ALIVE_FILE
     known_addrs, known_ips, existing = set(), set(), []
-    for path in (MASTER_FILE, ALIVE_FILE):
+    # Include legacy /root/ paths so a first-run remote agent doesn't
+    # re-probe proxies that were already validated locally.
+    for path in (master_file, alive_file, LEGACY_MASTER, LEGACY_ALIVE):
         if os.path.exists(path):
             try:
                 data = json.load(open(path, encoding="utf-8"))
@@ -141,7 +151,7 @@ def load_known():
                         known_addrs.add(p["addr"])
                     if p.get("exit_ip"):
                         known_ips.add(p["exit_ip"])
-                    if path == MASTER_FILE:
+                    if path == master_file:
                         existing.append(p)
             except Exception:
                 pass
@@ -191,13 +201,9 @@ def probe_candidates(candidates, target_n, timeout=5, workers=300):
 
     lock      = threading.Lock()
     stop      = threading.Event()
-    seen_ips  = set()
     # seed with already-known exit IPs so we don't re-record them
-    _, _, known_ips = (None, None, None)
-    _, _, known_ips = ((), set(), set())
-    # reload properly:
     _existing, _, known_ips = load_known()
-    seen_ips |= known_ips
+    seen_ips  = set(known_ips)
     found = []
 
     print(f"Probing {len(candidates)} candidates | target {target_n} new "
@@ -215,8 +221,8 @@ def probe_candidates(candidates, target_n, timeout=5, workers=300):
     return found
 
 
-def merge_and_save(new_proxies):
-    existing, known_addrs, known_ips = load_known()
+def merge_and_save(new_proxies, master_file):
+    existing, known_addrs, known_ips = load_known(master_file=master_file)
     merged = list(existing)
     added = 0
     for p in new_proxies:
@@ -226,13 +232,14 @@ def merge_and_save(new_proxies):
         known_addrs.add(p["addr"])
         known_ips.add(p["exit_ip"])
         added += 1
-    with open(MASTER_FILE, "w", encoding="utf-8") as f:
+    os.makedirs(os.path.dirname(master_file), exist_ok=True)
+    with open(master_file, "w", encoding="utf-8") as f:
         json.dump(merged, f, indent=2, ensure_ascii=False)
-    print(f"\n  Master file: {MASTER_FILE}  (+{added} new, {len(merged)} total)")
+    print(f"\n  Master file: {master_file}  (+{added} new, {len(merged)} total)")
     return merged
 
 
-def refresh_alive(master):
+def refresh_alive(master, alive_file):
     """Re-probe the full master list with the lightweight ynet-only check."""
     import requests
     print(f"\n  Re-checking {len(master)} known proxies against ynet (timeout 10s)...")
@@ -255,9 +262,10 @@ def refresh_alive(master):
     with cf.ThreadPoolExecutor(max_workers=40) as ex:
         results = list(ex.map(check, master))
     alive = sorted([r for r in results if r["alive"]], key=lambda x: x["check_ms"])
-    with open(ALIVE_FILE, "w", encoding="utf-8") as f:
+    os.makedirs(os.path.dirname(alive_file), exist_ok=True)
+    with open(alive_file, "w", encoding="utf-8") as f:
         json.dump(alive, f, indent=2, ensure_ascii=False)
-    print(f"  Alive file : {ALIVE_FILE}  ({len(alive)}/{len(master)} alive)")
+    print(f"  Alive file : {alive_file}  ({len(alive)}/{len(master)} alive)")
 
 
 def main():
@@ -272,19 +280,24 @@ def main():
                     help="parallel probe workers (default 300)")
     ap.add_argument("--skip-health-refresh", action="store_true",
                     help="don't re-check the whole pool at the end")
+    ap.add_argument("--master-file", default=MASTER_FILE,
+                    help=f"path to the master pool JSON (default {MASTER_FILE})")
+    ap.add_argument("--alive-file", default=ALIVE_FILE,
+                    help=f"path to the alive-pool JSON (default {ALIVE_FILE})")
     args = ap.parse_args()
 
     print("=" * 70)
     print(" Refreshing ynet proxy pool")
     print("=" * 70)
-    print(f"  Master file: {MASTER_FILE}")
-    print(f"  Alive file : {ALIVE_FILE}")
+    print(f"  Master file: {args.master_file}")
+    print(f"  Alive file : {args.alive_file}")
     print()
 
     print("Fetching source lists...")
     candidates = gather_candidates()
 
-    existing, known_addrs, _known_ips = load_known()
+    existing, known_addrs, _known_ips = load_known(
+        master_file=args.master_file, alive_file=args.alive_file)
     fresh = [c for c in candidates if c[1] not in known_addrs]
     import random
     random.shuffle(fresh)
@@ -292,9 +305,9 @@ def main():
     print(f"  Candidates after excluding {len(known_addrs)} known addrs: {len(fresh)}\n")
 
     found = probe_candidates(fresh, args.target, timeout=args.timeout, workers=args.workers)
-    merged = merge_and_save(found)
+    merged = merge_and_save(found, args.master_file)
     if not args.skip_health_refresh:
-        refresh_alive(merged)
+        refresh_alive(merged, args.alive_file)
     print("\nDone.")
 
 
