@@ -57,11 +57,18 @@ def parse_args():
         dest="log_level",
         help="Console log verbosity (file always gets DEBUG)",
     )
+    _DEFAULT_PROXIES = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "proxies", "unique_v2.json")
+    if not os.path.exists(_DEFAULT_PROXIES):
+        _DEFAULT_PROXIES = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "proxies", "unique.json")
     parser.add_argument(
-        "--proxies-file", default="/root/unique_working_proxies.json",
+        "--proxies-file", default=_DEFAULT_PROXIES,
         dest="proxies_file",
         help="JSON list of working proxies ({scheme,addr,...}). "
-             "If present, votes go directly to ynet via rotating proxies.",
+             "If present, votes go directly to ynet via rotating proxies. "
+             "Defaults to the repo-tracked unique_v2.json (~860 entries as of "
+             "2026-04-15) and falls back to unique.json (97 entries).",
     )
     parser.add_argument(
         "--ynet-base", default="https://www.ynet.co.il",
