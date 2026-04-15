@@ -72,8 +72,11 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
     proxy_pool   = load_proxies(proxies_file)
     proxy_timeout = int(cfg.get("proxy_timeout", 20))
     proxy_workers = int(cfg.get("proxy_workers", 20))
+    jitter_min = float(cfg.get("vote_jitter_min_s", 0.0))
+    jitter_max = float(cfg.get("vote_jitter_max_s", 10.0))
     print(f"  Proxies : {len(proxy_pool)} loaded from {proxies_file}")
     print(f"  Workers : {proxy_workers} parallel  |  timeout {proxy_timeout}s")
+    print(f"  Jitter  : {jitter_min:.1f}-{jitter_max:.1f}s random delay per vote")
 
     # ── Client-log sink ──────────────────────────────────────────────────────
     # Every event the browser emits (clicks, input changes, HTTP request/response,
@@ -263,6 +266,11 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
 
         def _one(entry):
             px_label = entry["label"] if entry else "direct"
+            # Per-request random jitter — each worker sleeps independently so
+            # requests trickle out to ynet instead of arriving in a burst.
+            # Configurable via vote_jitter_min_s / vote_jitter_max_s in config.
+            if jitter_max > 0:
+                time.sleep(random.uniform(jitter_min, jitter_max))
             try:
                 if entry:
                     r = req.post(url, json=payload, headers=headers,
