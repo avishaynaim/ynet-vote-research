@@ -117,6 +117,30 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
     def serve_ui():
         return send_from_directory(base_dir, "web_ui.html")
 
+    # ── Proxy capacity (drives the UI's vote-count slider max) ───────────────
+    # Computed from the live proxy_pool — distinct exit IPs we know about,
+    # plus addresses with unknown exit IP (they may add new IPs). Excludes
+    # known collisions so the cap reflects countable votes, not raw requests.
+
+    @app.route("/api/proxy_capacity", methods=["GET", "OPTIONS"])
+    def proxy_capacity():
+        if request.method == "OPTIONS":
+            return preflight()
+        try:
+            with open(proxies_file) as f:
+                raw = json.load(f)
+            unique_ips = {r["exit_ip"] for r in raw if r.get("exit_ip")}
+            no_ip      = sum(1 for r in raw if not r.get("exit_ip"))
+            return cors(make_response(jsonify({
+                "total_addresses":    len(raw),
+                "unique_exit_ips":    len(unique_ips),
+                "unknown_exit_ip":    no_ip,
+                "max_distinct_votes": len(unique_ips) + no_ip,
+                "source":             os.path.basename(proxies_file),
+            })))
+        except Exception as e:
+            return cors(make_response(jsonify({"error": str(e)}), 500))
+
     # ── Client event sink ────────────────────────────────────────────────────
     # Accepts a single event {...} or a batch {"events": [...]}.
     # Writes one JSON record per line. Fire-and-forget — always returns 204.
