@@ -223,7 +223,7 @@
     </div>
 
     <div>
-      <div class="ctrl-label">Number of votes (IPs)</div>
+      <div class="ctrl-label">Number of votes (IPs) <span id="capacityHint" style="opacity:.6;font-weight:normal"></span></div>
       <div class="count-grid">
         <input type="range" id="slider" min="1" max="500" value="10"
                oninput="syncCount(this.value)">
@@ -444,8 +444,7 @@ async function connect() {
   try {
     await loggedFetch(Config.url('comments', { article_id: Config.articleId }));
 
-    document.getElementById('slider').max     = Config.maxVotes;
-    document.getElementById('countInput').max = Config.maxVotes;
+    await refreshProxyCapacity();
 
     Config.save();
     setConnected(true);
@@ -480,6 +479,39 @@ function setConnected(ok) {
   const badge = document.getElementById('connBadge');
   badge.textContent = ok ? '● connected' : '● disconnected';
   badge.className   = `badge ${ok ? 'badge-connected' : 'badge-disconnected'}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PROXY CAPACITY — cap the vote-count slider at the real pool size
+//  (unique exit IPs + unknown-exit-IP entries). Excludes known-collision
+//  rows because ynet dedupes by egress IP, so only distinct IPs count.
+// ═══════════════════════════════════════════════════════════════════════════
+async function refreshProxyCapacity() {
+  const serverRoot = PROXY_BASE.replace(/\/proxy\/?$/, '');
+  const url = `${serverRoot}/api/proxy_capacity`;
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    const max = Math.max(1, d.max_distinct_votes | 0);
+    Config.maxVotes = max;
+
+    const slider     = document.getElementById('slider');
+    const countInput = document.getElementById('countInput');
+    slider.max     = max;
+    countInput.max = max;
+    if (+slider.value     > max) { slider.value     = max; syncCount(max); }
+    if (+countInput.value > max) { countInput.value = max; syncCount(max); }
+
+    const hint = document.getElementById('capacityHint');
+    if (hint) hint.textContent =
+      `· max ${max} (${d.unique_exit_ips} unique IP + ${d.unknown_exit_ip} unknown, from ${d.source})`;
+    addLog('sys', `Proxy capacity: ${max} distinct votes (${d.unique_exit_ips} unique + ${d.unknown_exit_ip} unknown, pool=${d.total_addresses})`);
+  } catch (e) {
+    addLog('sys', `Capacity fetch failed (${e.message}) — keeping max=${Config.maxVotes}`);
+    document.getElementById('slider').max     = Config.maxVotes;
+    document.getElementById('countInput').max = Config.maxVotes;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -852,11 +884,13 @@ function showError(html) {
   // Auto-connect on load
   connect();
 
-  // Auto-refresh every 15s
+  // Auto-refresh every 15s — re-pulls comments AND proxy capacity so the
+  // vote-count slider stays in sync if the alive.json pool is rebuilt.
   setInterval(() => {
     if (State.connected) {
       addLog('sys', 'Auto-refresh tick');
       loadComments();
+      refreshProxyCapacity();
     }
   }, 15000);
 })();
