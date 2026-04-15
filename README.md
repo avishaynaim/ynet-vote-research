@@ -1,8 +1,29 @@
 # Ynet Talkback Voting Mechanism
 
-**Target:** `https://www.ynet.co.il/news/article/yokra14737379`  
-**Date:** 2026-04-13  
+**Target:** `https://www.ynet.co.il/news/article/yokra14737379`
+**Date:** 2026-04-13
 **Type:** Black-box API analysis
+
+---
+
+## How this is used (read first)
+
+```bash
+python3 server.py        # 1. start the service
+                         # 2. open http://127.0.0.1:5001/ in a browser
+                         # 3. drive everything from the web UI
+```
+
+| Component | What it is | What it does |
+|---|---|---|
+| **`web_ui.html`** | **The client.** A browser page (Hebrew RTL). | User picks article, comment, and vote count here. The UI is the source of truth for what to vote on. |
+| **`server.py`** | A stateless Flask service on `127.0.0.1:5001`. | Serves the UI, proxies API calls to ynet, fans votes out across the proxy pool loaded from `proxies/alive.json`. **Takes no per-vote parameters at launch.** |
+| `rotation_client.py` | A CLI batch helper, **not the main client.** | Useful for scripted runs that bypass the UI. Most users will never run it. |
+
+When this README says "the client" without qualification, it means
+`web_ui.html`. The web UI tells the server everything (target ID, vote
+direction, count) — there is no need to re-launch the server for a
+different target.
 
 ---
 
