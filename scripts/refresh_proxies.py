@@ -82,7 +82,149 @@ SOURCES = [
     ("socks5", "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"),
     # proxifly (mixed — lines carry their own scheme)
     ("http",   "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/all/data.txt"),
+    # zloi-user/hideip.me — regularly refreshed, includes latency
+    ("http",   "https://raw.githubusercontent.com/zloi-user/hideip.me/master/http.txt"),
+    ("http",   "https://raw.githubusercontent.com/zloi-user/hideip.me/master/https.txt"),
+    ("socks4", "https://raw.githubusercontent.com/zloi-user/hideip.me/master/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/zloi-user/hideip.me/master/socks5.txt"),
+    # elliottophellia/yakumo — "checked" subsets already filtered
+    ("http",   "https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/http/global/http_checked.txt"),
+    ("socks4", "https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/socks4/global/socks4_checked.txt"),
+    ("socks5", "https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/socks5/global/socks5_checked.txt"),
+    # Vann-Dev
+    ("http",   "https://raw.githubusercontent.com/Vann-Dev/proxy-list/main/proxies/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/Vann-Dev/proxy-list/main/proxies/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/Vann-Dev/proxy-list/main/proxies/socks5.txt"),
+    # prxchk
+    ("http",   "https://raw.githubusercontent.com/prxchk/proxy-list/main/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/prxchk/proxy-list/main/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/prxchk/proxy-list/main/socks5.txt"),
+    # yemixzy
+    ("http",   "https://raw.githubusercontent.com/yemixzy/proxy-list/master/proxies/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/yemixzy/proxy-list/master/proxies/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/yemixzy/proxy-list/master/proxies/socks5.txt"),
+    # MuRongPIG
+    ("http",   "https://raw.githubusercontent.com/MuRongPIG/Proxy-Master/main/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/MuRongPIG/Proxy-Master/main/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/MuRongPIG/Proxy-Master/main/socks5.txt"),
+    # ErcinDedeoglu
+    ("http",   "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/socks5.txt"),
+    # officialputuid/KangProxy
+    ("http",   "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/http/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/socks4/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/socks5/socks5.txt"),
+    # B4RC0DE-TM
+    ("http",   "https://raw.githubusercontent.com/B4RC0DE-TM/proxy-list/main/HTTP.txt"),
+    ("socks4", "https://raw.githubusercontent.com/B4RC0DE-TM/proxy-list/main/SOCKS4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/B4RC0DE-TM/proxy-list/main/SOCKS5.txt"),
 ]
+
+# Real-time proxy APIs — HTTP services that return current proxy lists.
+# Higher hit rate than static GitHub files (~2-5% vs ~0.3%) because
+# these providers re-validate on their own schedule.
+API_FETCHERS = [
+    "proxyscrape",
+    "geonode",
+    "proxy-list.download",
+    "openproxy.space",
+]
+
+
+def fetch_proxyscrape():
+    """ProxyScrape v3 — http/socks4/socks5, returns ip:port per line."""
+    out = []
+    for proto in ("http", "socks4", "socks5"):
+        url = ("https://api.proxyscrape.com/v3/free-proxy-list/get"
+               f"?request=displayproxies&protocol={proto}"
+               "&timeout=10000&country=all&proxy_format=ipport&format=text")
+        try:
+            body = fetch(url, timeout=30)
+            cnt = 0
+            for line in body.splitlines():
+                line = line.strip()
+                if line and ":" in line and not line.startswith("#"):
+                    out.append((proto, line))
+                    cnt += 1
+            print(f"  [OK]  proxyscrape/{proto:<6}             {cnt:>6} entries")
+        except Exception as e:
+            print(f"  [ERR] proxyscrape/{proto}: {e}")
+    return out
+
+
+def fetch_geonode():
+    """Geonode JSON API — paginated, rich metadata incl. protocols array."""
+    out = []
+    try:
+        for page in range(1, 21):  # up to 10k entries
+            url = ("https://proxylist.geonode.com/api/proxy-list"
+                   f"?limit=500&page={page}&sort_by=lastChecked&sort_type=desc")
+            body = fetch(url, timeout=30)
+            data = json.loads(body).get("data", [])
+            if not data:
+                break
+            for p in data:
+                addr = f"{p.get('ip')}:{p.get('port')}"
+                for proto in p.get("protocols", []):
+                    s = "http" if proto in ("http", "https") else proto
+                    if s in ("http", "socks4", "socks5"):
+                        out.append((s, addr))
+        print(f"  [OK]  geonode                         {len(out):>6} entries")
+    except Exception as e:
+        print(f"  [ERR] geonode: {e}")
+    return out
+
+
+def fetch_proxy_list_download():
+    """proxy-list.download v1 — plain text per type."""
+    out = []
+    for proto_query, proto_store in (("http", "http"), ("https", "http"),
+                                      ("socks4", "socks4"), ("socks5", "socks5")):
+        url = f"https://www.proxy-list.download/api/v1/get?type={proto_query}"
+        try:
+            body = fetch(url, timeout=20)
+            cnt = 0
+            for line in body.splitlines():
+                line = line.strip()
+                if line and ":" in line:
+                    out.append((proto_store, line))
+                    cnt += 1
+            print(f"  [OK]  proxy-list.download/{proto_query:<6}      {cnt:>6} entries")
+        except Exception as e:
+            print(f"  [ERR] proxy-list.download/{proto_query}: {e}")
+    return out
+
+
+def fetch_openproxy_space():
+    """openproxy.space /lists/{proto} — JSON array, entries have .data = [ip:port]."""
+    out = []
+    for proto in ("http", "socks4", "socks5"):
+        url = f"https://api.openproxy.space/lists/{proto}"
+        try:
+            body = fetch(url, timeout=30)
+            data = json.loads(body)
+            cnt = 0
+            if isinstance(data, list):
+                for entry in data:
+                    if isinstance(entry, dict) and isinstance(entry.get("data"), list):
+                        for a in entry["data"]:
+                            a = str(a).strip()
+                            if ":" in a:
+                                out.append((proto, a))
+                                cnt += 1
+            print(f"  [OK]  openproxy.space/{proto:<6}         {cnt:>6} entries")
+        except Exception as e:
+            print(f"  [ERR] openproxy.space/{proto}: {e}")
+    return out
+
+
+API_CALLS = {
+    "proxyscrape":          fetch_proxyscrape,
+    "geonode":              fetch_geonode,
+    "proxy-list.download":  fetch_proxy_list_download,
+    "openproxy.space":      fetch_openproxy_space,
+}
 
 
 def fetch(url: str, timeout: int = 15) -> str:
@@ -113,8 +255,9 @@ def parse_list(scheme: str, body: str):
 def gather_candidates(verbose=True):
     candidates = []
     errors = 0
-    with cf.ThreadPoolExecutor(max_workers=12) as ex:
+    with cf.ThreadPoolExecutor(max_workers=16) as ex:
         futs = {ex.submit(fetch, url): (scheme, url) for scheme, url in SOURCES}
+        api_futs = {ex.submit(fn): name for name, fn in API_CALLS.items()}
         for fut in cf.as_completed(futs):
             scheme, url = futs[fut]
             try:
@@ -127,11 +270,32 @@ def gather_candidates(verbose=True):
                 errors += 1
                 if verbose:
                     print(f"  [ERR] {url.split('/')[-1]:<28} {exc}")
+        for fut in cf.as_completed(api_futs):
+            name = api_futs[fut]
+            try:
+                candidates.extend(fut.result())
+            except Exception as exc:
+                errors += 1
+                if verbose:
+                    print(f"  [ERR] api/{name}: {exc}")
     before = len(candidates)
     candidates = list(dict.fromkeys(candidates))
     if verbose:
         print(f"\n  Raw: {before}  Dedup'd: {len(candidates)}  (source errors: {errors})")
     return candidates
+
+
+def tcp_alive(addr: str, timeout: float = 2.0) -> bool:
+    """Fast TCP connect — weeds out dead hosts before wasting an HTTP probe."""
+    import socket
+    host, _, port = addr.partition(":")
+    if not port.isdigit():
+        return False
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return True
+    except Exception:
+        return False
 
 
 def load_known(master_file=None, alive_file=None):
@@ -158,11 +322,14 @@ def load_known(master_file=None, alive_file=None):
     return existing, known_addrs, known_ips
 
 
-def probe_worker(entry, timeout, seen_ips, lock, stop_event, target_n, found):
+def probe_worker(entry, timeout, seen_ips, lock, stop_event, target_n, found,
+                 tcp_prefilter=True):
     import requests
     if stop_event.is_set():
         return
     scheme, addr = entry
+    if tcp_prefilter and not tcp_alive(addr, timeout=2.0):
+        return
     px = {"http": f"{scheme}://{addr}", "https": f"{scheme}://{addr}"}
     try:
         r = requests.get(IP_CHECK_URL, proxies=px, timeout=timeout)
