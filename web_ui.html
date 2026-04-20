@@ -177,6 +177,18 @@
     .state-msg { padding: 40px 20px; text-align: center; color: var(--muted); font-size: .88rem; line-height: 1.8; }
     .state-msg code { background: var(--card); border-radius: 4px; padding: 2px 8px; color: var(--accent); font-size: .82rem; }
 
+    /* ── Recent URL chips ── */
+    .recent-chip {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 2px 10px; font-size: .68rem; color: var(--accent); cursor: pointer;
+      transition: all .15s; white-space: nowrap; text-decoration: none;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .recent-chip:hover { background: var(--card-sel); border-color: var(--accent); }
+    .recent-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .recent-chip .chip-x { color: var(--muted); font-size: .6rem; margin-right: -4px; padding: 0 2px; }
+    .recent-chip .chip-x:hover { color: var(--dislike); }
+
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
@@ -197,16 +209,21 @@
 
 <!-- ══ Settings bar ═════════════════════════════════════════════════════ -->
 <div class="settings-bar">
-  <label>Server URL</label>
-  <input type="text" id="serverUrl" placeholder="http://127.0.0.1:5001"
-         oninput="onServerUrlInput(this.value)"
+  <label>Article URL</label>
+  <input type="text" id="articleUrl" placeholder="https://www.ynet.co.il/news/article/yokra14737379"
+         oninput="onArticleUrlInput(this.value)"
          onkeydown="if(event.key==='Enter') connect()">
-  <button class="btn-sm btn-connect" onclick="connect()">Connect</button>
+  <button class="btn-sm btn-connect" onclick="connect()">Load</button>
   <button class="btn-sm" style="background:var(--card);color:var(--muted);border:1px solid var(--border)"
-          onclick="addLog('action','Click: Clear URL');document.getElementById('serverUrl').value='';document.getElementById('serverUrl').focus()">Clear</button>
-  <button class="btn-sm" style="background:var(--card);color:var(--muted);border:1px solid var(--border)"
-          onclick="addLog('action','Click: Ynet Live');document.getElementById('serverUrl').value='https://www.ynet.co.il';connect()">Ynet Live</button>
+          onclick="addLog('action','Click: Clear URL');document.getElementById('articleUrl').value='';document.getElementById('articleUrl').focus()">Clear</button>
+  <button class="btn-sm" style="background:#1e3a5f;color:#93c5fd;border:1px solid #2563eb"
+          onclick="manualRefresh()">Refresh</button>
   <span class="server-info" id="serverInfo">Not connected</span>
+</div>
+<!-- ══ Recent URLs bar ═════════════════════════════════════════════════ -->
+<div class="settings-bar" id="recentBar" style="gap:8px;padding:4px 24px;display:none">
+  <label style="font-size:.68rem">Recent</label>
+  <div id="recentList" style="display:flex;gap:6px;flex-wrap:wrap;flex:1"></div>
 </div>
 
 <!-- ══ Layout ═══════════════════════════════════════════════════════════ -->
@@ -223,14 +240,14 @@
     </div>
 
     <div>
-      <div class="ctrl-label">Number of votes (IPs) <span id="capacityHint" style="opacity:.6;font-weight:normal"></span></div>
+      <div class="ctrl-label">Number of votes <span id="capacityHint" style="opacity:.6;font-weight:normal"></span></div>
       <div class="count-grid">
-        <input type="range" id="slider" min="1" max="500" value="10"
+        <input type="range" id="slider" min="1" max="10000" value="10"
                oninput="syncCount(this.value)">
         <span class="count-val" id="countVal">10</span>
       </div>
       <input type="number" class="count-text" id="countInput"
-             min="1" max="500" value="10" oninput="syncCount(this.value)">
+             min="1" max="99999" value="10" oninput="syncCount(this.value)">
     </div>
 
     <div>
@@ -250,7 +267,8 @@
       <div class="panel-title" style="margin-bottom:10px">Last Result</div>
       <div class="result-row"><span class="rl">Votes sent</span><span class="rv a" id="rCount">—</span></div>
       <div class="result-row"><span class="rl">Accepted</span><span class="rv g" id="rAccepted">—</span></div>
-      <div class="result-row"><span class="rl">Dropped (dedup)</span><span class="rv r" id="rDropped">—</span></div>
+      <div class="result-row"><span class="rl">Errors</span><span class="rv r" id="rDropped">—</span></div>
+      <div class="result-row"><span class="rl">Proxies remaining</span><span class="rv a" id="rRemaining">—</span></div>
       <hr class="result-sep">
       <div class="result-row"><span class="rl">Before</span><span class="rv" id="rBefore">—</span></div>
       <div class="result-row"><span class="rl">After</span><span class="rv" id="rAfter">—</span></div>
@@ -280,8 +298,8 @@
              oninput="onSearchInput(this.value)">
     </div>
     <div class="sort-bar">
-      <button class="sort-btn active" onclick="setSort('newest',this)">Newest</button>
-      <button class="sort-btn" onclick="setSort('liked',this)">Most Liked</button>
+      <button class="sort-btn" onclick="setSort('newest',this)">Newest</button>
+      <button class="sort-btn active" onclick="setSort('liked',this)">Most Liked</button>
       <button class="sort-btn" onclick="setSort('disliked',this)">Most Disliked</button>
       <button class="sort-btn" onclick="setSort('controversial',this)">Controversial</button>
       <button class="sort-btn" onclick="setSort('zero',this)">Zero Votes</button>
@@ -295,14 +313,15 @@
 // ═══════════════════════════════════════════════════════════════════════════
 //  CONFIG — everything lives here, nothing is hardcoded elsewhere in the file
 // ═══════════════════════════════════════════════════════════════════════════
-const PROXY_BASE  = 'http://127.0.0.1:5001/proxy';
-const YNET_ORIGIN = 'https://www.ynet.co.il';
+// The local proxy server — all requests go through here
+const SERVER_BASE = location.origin || 'http://127.0.0.1:5001';
 
 const Config = {
-  // What the user typed / sees — may be the real Ynet URL
-  serverUrl:  'https://www.ynet.co.il',
+  // Full article URL as entered by the user
+  articleUrl: 'https://www.ynet.co.il/news/article/yokra14737379',
+  // Extracted from articleUrl
   articleId:  'yokra14737379',
-  maxVotes:   500,
+  maxVotes:   99999, // no real limit — proxies are reusable
 
   endpoints: {
     comments:  '/api/comments',
@@ -310,18 +329,40 @@ const Config = {
     vote:      '/iphone/json/api/talkbacks/vote',
   },
 
-  // True when the user-supplied URL points at the real Ynet
-  get isLive() {
-    return this.serverUrl.replace(/\/$/, '') === YNET_ORIGIN;
-  },
-
-  // Actual base used for requests — transparently swap in proxy when live
+  // Always route through the local proxy server
   get apiBase() {
-    return this.isLive ? PROXY_BASE : this.serverUrl.replace(/\/$/, '');
+    return SERVER_BASE;
   },
 
-  save() {
-    // intentionally not persisting serverUrl — always start from real Ynet
+  // Parse the article ID from a full ynet URL.
+  // Supports patterns like:
+  //   https://www.ynet.co.il/news/article/yokra14737379
+  //   https://www.ynet.co.il/economy/article/yokra12345678
+  //   https://www.ynet.co.il/anything/.../yokra14737379
+  //   yokra14737379  (just the ID itself)
+  parseArticleUrl(url) {
+    url = (url || '').trim();
+    if (!url) return null;
+    // If it's just an article ID (no slashes, no protocol)
+    if (!url.includes('/') && !url.includes(':')) return url;
+    // Extract last meaningful path segment
+    try {
+      const u = new URL(url);
+      const segments = u.pathname.split('/').filter(Boolean);
+      // Return the last segment — that's the article ID
+      return segments.length ? segments[segments.length - 1] : null;
+    } catch {
+      // Fallback: grab the last segment after splitting on /
+      const segments = url.split('/').filter(Boolean);
+      return segments.length ? segments[segments.length - 1] : null;
+    }
+  },
+
+  setArticleUrl(url) {
+    this.articleUrl = url;
+    const id = this.parseArticleUrl(url);
+    if (id) this.articleId = id;
+    return id;
   },
 
   url(key, params = {}) {
@@ -343,7 +384,7 @@ const Config = {
 const State = {
   comments:   [],
   selectedId: null,
-  sort:       'newest',
+  sort:       'liked',
   log:        [],
   connected:  false,
 };
@@ -432,13 +473,21 @@ const API = {
 //  CONNECTION
 // ═══════════════════════════════════════════════════════════════════════════
 async function connect() {
-  const urlInput = document.getElementById('serverUrl').value.trim();
-  if (urlInput) { Config.serverUrl = urlInput; }
+  const urlInput = document.getElementById('articleUrl').value.trim();
+  if (urlInput) {
+    const id = Config.setArticleUrl(urlInput);
+    if (!id) {
+      document.getElementById('articleUrl').classList.add('error');
+      document.getElementById('serverInfo').textContent = 'Could not parse article ID from URL';
+      addLog('sys', `Failed to parse article ID from: ${urlInput}`);
+      return;
+    }
+  }
 
-  addLog('action', `Click: Connect → ${Config.serverUrl}`, { serverUrl: Config.serverUrl, articleId: Config.articleId });
+  addLog('action', `Click: Load → ${Config.articleUrl}`, { articleUrl: Config.articleUrl, articleId: Config.articleId });
 
-  document.getElementById('serverUrl').classList.remove('error');
-  document.getElementById('serverInfo').textContent = 'Connecting…';
+  document.getElementById('articleUrl').classList.remove('error');
+  document.getElementById('serverInfo').textContent = 'Loading…';
   setConnected(false);
 
   try {
@@ -446,29 +495,28 @@ async function connect() {
 
     await refreshProxyCapacity();
 
-    Config.save();
     setConnected(true);
 
-    document.getElementById('serverInfo').textContent    = Config.isLive
-      ? `${YNET_ORIGIN}  ·  live (via proxy)`
-      : Config.serverUrl;
+    document.getElementById('serverInfo').textContent =
+      `article: ${Config.articleId}  ·  via ${SERVER_BASE}`;
     document.getElementById('headerArticle').textContent = Config.articleId;
 
     await loadComments();
-    addLog('sys', `Connected to ${Config.serverUrl}`);
+    addRecent(Config.articleUrl);
+    addLog('sys', `Connected — article ${Config.articleId}`);
 
   } catch(e) {
-    document.getElementById('serverUrl').classList.add('error');
+    document.getElementById('articleUrl').classList.add('error');
     const isTypeError = e instanceof TypeError;
     const msg = isTypeError
-      ? `Failed to fetch — server unreachable or blocked by CORS`
+      ? `Failed to fetch — proxy server unreachable`
       : e.message;
     document.getElementById('serverInfo').textContent = `Error: ${msg}`;
     addLog('sys', `Connection failed: ${msg}`);
     showError(
-      `Cannot connect to <code>${Config.serverUrl}</code><br><br>` +
+      `Cannot load article <code>${Config.articleId}</code><br><br>` +
       (isTypeError
-        ? `Network error or CORS block. If using the Ynet Live URL, the browser cannot call the real API directly.<br>Use the local server instead: <code>python3 server.py</code>`
+        ? `Proxy server unreachable at <code>${SERVER_BASE}</code>.<br>Make sure the server is running: <code>python3 server.py</code>`
         : `Server returned: ${msg}`)
     );
   }
@@ -482,36 +530,17 @@ function setConnected(ok) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  PROXY CAPACITY — cap the vote-count slider at the real pool size
-//  (unique exit IPs + unknown-exit-IP entries). Excludes known-collision
-//  rows because ynet dedupes by egress IP, so only distinct IPs count.
+//  PROXY CAPACITY — show pool size info (no cap — proxies are reusable)
 // ═══════════════════════════════════════════════════════════════════════════
 async function refreshProxyCapacity() {
-  const serverRoot = PROXY_BASE.replace(/\/proxy\/?$/, '');
-  const url = `${serverRoot}/api/proxy_capacity`;
   try {
-    const r = await fetch(url, { cache: 'no-store' });
-    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const r = await fetch(`${SERVER_BASE}/api/proxy_capacity`, { cache: 'no-store' });
+    if (!r.ok) return;
     const d = await r.json();
-    const max = Math.max(1, d.max_distinct_votes | 0);
-    Config.maxVotes = max;
-
-    const slider     = document.getElementById('slider');
-    const countInput = document.getElementById('countInput');
-    slider.max     = max;
-    countInput.max = max;
-    if (+slider.value     > max) { slider.value     = max; syncCount(max); }
-    if (+countInput.value > max) { countInput.value = max; syncCount(max); }
-
     const hint = document.getElementById('capacityHint');
-    if (hint) hint.textContent =
-      `· max ${max} (${d.unique_exit_ips} unique IP + ${d.unknown_exit_ip} unknown, from ${d.source})`;
-    addLog('sys', `Proxy capacity: ${max} distinct votes (${d.unique_exit_ips} unique + ${d.unknown_exit_ip} unknown, pool=${d.total_addresses})`);
-  } catch (e) {
-    addLog('sys', `Capacity fetch failed (${e.message}) — keeping max=${Config.maxVotes}`);
-    document.getElementById('slider').max     = Config.maxVotes;
-    document.getElementById('countInput').max = Config.maxVotes;
-  }
+    if (hint) hint.textContent = `· ${d.total_addresses} proxies (reusable)`;
+    addLog('sys', `Proxy pool: ${d.total_addresses} proxies`);
+  } catch (e) {}
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -594,7 +623,7 @@ function renderComments() {
   }).join('');
 }
 
-function selectComment(id) {
+async function selectComment(id) {
   State.selectedId = id;
   const c = State.comments.find(x => x.id === id);
   if (!c) return;
@@ -608,6 +637,8 @@ function selectComment(id) {
   document.getElementById('btnDislike').disabled = false;
   document.getElementById('resultBox').classList.remove('show');
 }
+
+// No per-talkback tracking — proxies are reused freely.
 
 function updateSelectedBox(c) {
   document.getElementById('selectedBox').className = 'selected-box';
@@ -638,61 +669,74 @@ async function vote(like) {
   document.getElementById('resultBox').classList.remove('show');
 
   // Progress
-  const pw    = document.getElementById('progressWrap');
-  const pb    = document.getElementById('progressBar');
-  const pl    = document.getElementById('progressLabel');
+  const pw = document.getElementById('progressWrap');
+  const pb = document.getElementById('progressBar');
+  const pl = document.getElementById('progressLabel');
   pw.classList.add('active');
   pb.style.width = '0%'; pb.style.background = 'var(--accent)';
-  pl.textContent = `Sending ${count} ${like ? 'likes' : 'dislikes'}…`;
-
-  let prog = 0;
-  const ticker = setInterval(() => {
-    prog = Math.min(prog + Math.random() * 10, 88);
-    pb.style.width = prog + '%';
-  }, 100);
+  pl.textContent = `Starting ${count} ${like ? 'likes' : 'dislikes'}…`;
 
   try {
-    const before = c ? { likes: c.likes, unlikes: c.unlikes } : { likes: 0, unlikes: 0 };
-
-    const data = await API.post('voteBatch', {
-      article_id:  Config.articleId,
-      talkback_id: State.selectedId,
-      count,
-      like,
+    const resp = await fetch(Config.url('voteBatch'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        article_id: Config.articleId, talkback_id: State.selectedId, count, like,
+      }),
     });
 
-    clearInterval(ticker);
+    if (!resp.ok) {
+      const errBody = await resp.text();
+      throw new Error(`HTTP ${resp.status}: ${errBody}`);
+    }
+
+    // Read SSE stream for live progress
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let last = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const parts = buffer.split('\n\n');
+      buffer = parts.pop();
+      for (const part of parts) {
+        for (const line of part.split('\n')) {
+          if (!line.startsWith('data: ')) continue;
+          try {
+            const d = JSON.parse(line.slice(6));
+            last = d;
+            if (d.t === 'p') {
+              const pct = Math.round((d.s / d.n) * 100);
+              pb.style.width = pct + '%';
+              pl.textContent = `${d.o} accepted · ${d.e} errors · ${d.s}/${d.n} sent`;
+            }
+          } catch {}
+        }
+      }
+    }
+
+    // Done
     pb.style.width = '100%';
-    pl.textContent = `Sent ${data.sent} votes — refreshing…`;
-
-    await loadComments();
-
-    const after = State.comments.find(x => x.id === State.selectedId)
-                  || { likes: before.likes, unlikes: before.unlikes };
-    const lift  = like
-      ? after.likes   - before.likes
-      : after.unlikes - before.unlikes;
-
-    document.getElementById('rCount').textContent    = data.sent;
-    document.getElementById('rAccepted').textContent = data.ok;
-    document.getElementById('rDropped').textContent  = data.errors;
-    document.getElementById('rBefore').textContent   = `👍 ${before.likes}  👎 ${before.unlikes}`;
-    document.getElementById('rAfter').textContent    = `👍 ${after.likes}  👎 ${after.unlikes}`;
-    document.getElementById('rLift').innerHTML =
-      `<span class="lift-badge ${lift > 0 ? 'lift-pos' : lift < 0 ? 'lift-neg' : ''}">`+
-      `${lift >= 0 ? '+' : ''}${lift} ${like ? 'likes' : 'dislikes'}`+
-      `${lift === 0 ? ' (CDN cache — check in ~87s)' : ''}</span>`;
-    document.getElementById('resultBox').classList.add('show');
-
-    addLog(like ? 'like' : 'dislike',
-      `${c?.author || '#'+State.selectedId} — ${count} sent → lift ${lift >= 0 ? '+' : ''}${lift}`);
-
-    // Flash updated card
-    const card = document.getElementById(`card-${State.selectedId}`);
-    if (card) { card.classList.add('updated-flash'); setTimeout(() => card.classList.remove('updated-flash'), 700); }
+    if (last && last.t === 'done') {
+      pb.style.background = last.o > 0 ? 'var(--like)' : 'var(--dislike)';
+      pl.textContent = `Done — ${last.o} accepted, ${last.e} errors`;
+      document.getElementById('rCount').textContent    = last.s;
+      document.getElementById('rAccepted').textContent = last.o;
+      document.getElementById('rDropped').textContent  = last.e;
+      document.getElementById('rRemaining').textContent = `${last.pool_size} proxies (reusable)`;
+      document.getElementById('rBefore').textContent   = `👍 ${c?.likes||0}  👎 ${c?.unlikes||0}`;
+      document.getElementById('rAfter').textContent    = 'Press Refresh to check';
+      document.getElementById('rLift').innerHTML =
+        `<span class="lift-badge">${last.o} accepted (Refresh to see counts)</span>`;
+      document.getElementById('resultBox').classList.add('show');
+      addLog(like ? 'like' : 'dislike',
+        `${c?.author || '#'+State.selectedId} — ${last.o}/${last.s} accepted`);
+    }
 
   } catch(e) {
-    clearInterval(ticker);
     pb.style.background = 'var(--dislike)';
     pb.style.width = '100%';
     pl.textContent = `Error: ${e.message}`;
@@ -735,8 +779,78 @@ function onSearchInput(val) {
   renderComments();
 }
 
-function onServerUrlInput(val) {
-  addLog('change', `Change: serverUrl = "${val}"`, { field: 'serverUrl', value: val });
+async function manualRefresh() {
+  if (!State.connected) return;
+  addLog('action', 'Click: Refresh');
+  await loadComments();
+  if (State.selectedId) {
+    await refreshRemainingForTalkback(State.selectedId);
+  } else {
+    await refreshProxyCapacity();
+  }
+}
+
+function onArticleUrlInput(val) {
+  addLog('change', `Change: articleUrl = "${val}"`, { field: 'articleUrl', value: val });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  RECENT URLs — persisted in localStorage
+// ═══════════════════════════════════════════════════════════════════════════
+const RECENT_KEY = 'recentArticleUrls';
+const LAST_URL_KEY = 'lastArticleUrl';
+const MAX_RECENT = 10;
+
+function loadRecent() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; }
+  catch { return []; }
+}
+
+function saveRecent(list) {
+  localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, MAX_RECENT)));
+}
+
+function addRecent(url) {
+  if (!url) return;
+  let list = loadRecent();
+  // Remove if already exists (will re-add at front)
+  list = list.filter(u => u !== url);
+  list.unshift(url);
+  saveRecent(list);
+  localStorage.setItem(LAST_URL_KEY, url);
+  renderRecent();
+}
+
+function removeRecent(url) {
+  let list = loadRecent().filter(u => u !== url);
+  saveRecent(list);
+  renderRecent();
+}
+
+function renderRecent() {
+  const list = loadRecent();
+  const bar = document.getElementById('recentBar');
+  const el = document.getElementById('recentList');
+  if (!list.length) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  el.innerHTML = list.map(url => {
+    const id = Config.parseArticleUrl(url) || url;
+    const short = id.length > 20 ? id.slice(0, 18) + '…' : id;
+    const isActive = url === Config.articleUrl;
+    return `<span class="recent-chip${isActive ? ' active' : ''}"
+                  onclick="loadRecentUrl('${esc(url)}')"
+                  title="${esc(url)}">
+      ${esc(short)}
+      <span class="chip-x" onclick="event.stopPropagation();removeRecent('${esc(url)}')">✕</span>
+    </span>`;
+  }).join('');
+}
+
+function loadRecentUrl(url) {
+  document.getElementById('articleUrl').value = url;
+  Config.setArticleUrl(url);
+  addLog('action', `Click: recent URL → ${url}`);
+  connect();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -870,29 +984,24 @@ function showError(html) {
 //  INIT
 // ═══════════════════════════════════════════════════════════════════════════
 (function init() {
-  // Clear any stale serverUrl from localStorage — always start from real Ynet
-  localStorage.removeItem('serverUrl');
-  localStorage.removeItem('articleId');
+  // Restore last used URL from localStorage
+  const savedUrl = localStorage.getItem(LAST_URL_KEY);
+  if (savedUrl) {
+    Config.setArticleUrl(savedUrl);
+  }
 
-  document.getElementById('serverUrl').value = Config.serverUrl;
+  document.getElementById('articleUrl').value = Config.articleUrl;
+  renderRecent();
 
-  addLog('sys', `Init — serverUrl=${Config.serverUrl} articleId=${Config.articleId}`,
+  addLog('sys', `Init — articleUrl=${Config.articleUrl} articleId=${Config.articleId}`,
     { userAgent: navigator.userAgent, url: location.href, config: {
-        serverUrl: Config.serverUrl, articleId: Config.articleId, maxVotes: Config.maxVotes,
-        endpoints: Config.endpoints, apiBase: Config.apiBase, isLive: Config.isLive } });
+        articleUrl: Config.articleUrl, articleId: Config.articleId, maxVotes: Config.maxVotes,
+        endpoints: Config.endpoints, apiBase: Config.apiBase } });
 
   // Auto-connect on load
   connect();
 
-  // Auto-refresh every 15s — re-pulls comments AND proxy capacity so the
-  // vote-count slider stays in sync if the alive.json pool is rebuilt.
-  setInterval(() => {
-    if (State.connected) {
-      addLog('sys', 'Auto-refresh tick');
-      loadComments();
-      refreshProxyCapacity();
-    }
-  }, 15000);
+  // No auto-refresh — user controls refresh manually via button.
 })();
 </script>
 </body>
