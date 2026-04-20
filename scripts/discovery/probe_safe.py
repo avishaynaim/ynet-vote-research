@@ -4,10 +4,10 @@
 Uses aiohttp + aiohttp-socks. ~150 concurrent tasks is ~1/3 the memory of
 150 threads because coroutines share a single event loop stack.
 
-Checkpoint files:
-  /root/hits_checkpoint.json   — list of confirmed working proxies
-  /root/probe_cursor.txt       — lines skipped from candidates.txt
-  /root/probe.log              — human log (appended)
+Checkpoint files (relative to repo root):
+  proxies/hits_checkpoint.json         — list of confirmed working proxies
+  scripts/discovery/sources/probe_cursor.txt — lines skipped from candidates.txt
+  scripts/discovery/sources/probe.log        — human log (appended)
 
 Resume: just re-run — cursor + hits checkpoint are read on startup.
 
@@ -20,10 +20,11 @@ import argparse, asyncio, json, os, signal, sys, time
 import aiohttp
 from aiohttp_socks import ProxyConnector
 
-CAND   = "/root/sources/candidates.txt"
-HITS   = "/root/hits_checkpoint.json"
-CURSOR = "/root/probe_cursor.txt"
-LOG    = "/root/probe.log"
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+CAND   = os.path.join(_REPO_ROOT, "scripts", "discovery", "sources", "candidates.txt")
+HITS   = os.path.join(_REPO_ROOT, "proxies", "hits_checkpoint.json")
+CURSOR = os.path.join(_REPO_ROOT, "scripts", "discovery", "sources", "probe_cursor.txt")
+LOG    = os.path.join(_REPO_ROOT, "scripts", "discovery", "sources", "probe.log")
 
 YNET_URL = "https://www.ynet.co.il/iphone/json/api/talkbacks/list/v2/yokra14737379/0/1"
 IPIFY    = "https://api.ipify.org?format=json"
