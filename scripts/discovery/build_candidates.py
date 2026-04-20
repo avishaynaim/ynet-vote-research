@@ -1,32 +1,26 @@
 #!/usr/bin/env python3
-"""Merge every known proxy source into /root/sources/candidates.txt — one 'scheme addr' per line.
-Dedupes. Excludes addresses already confirmed in unique_working_proxies.json.
+"""Merge every raw proxy source under scripts/discovery/sources/ into
+scripts/discovery/sources/candidates.txt — one 'scheme addr' per line.
+Dedupes. Excludes addresses already confirmed in proxies/unique.json.
+
+Drop new raw lists into scripts/discovery/sources/ (or any subdir) as
+'*.txt'. Scheme is inferred from the filename (contains 's5' / 'socks5'
+-> socks5, 's4' / 'socks4' -> socks4, else http).
 """
 import json, os, re, glob, random
 random.seed(1337)
 
-SOURCES = []
-# legacy files in /root/
-for path, default in [
-    ("/root/clarketm.txt",    "http"),
-    ("/root/hookzof_s5.txt",  "socks5"),
-    ("/root/mmpx12_http.txt", "http"),
-    ("/root/mmpx12_s4.txt",   "socks4"),
-    ("/root/mmpx12_s5.txt",   "socks5"),
-    ("/root/monosans_s4.txt", "socks4"),
-    ("/root/monosans_s5.txt", "socks5"),
-    ("/root/monosans.txt",    "http"),
-    ("/root/proxifly.txt",    "http"),
-    ("/root/ps_s4.txt",       "socks4"),
-    ("/root/ps_s5.txt",       "socks5"),
-    ("/root/socks4.txt",      "socks4"),
-    ("/root/socks5.txt",      "socks5"),
-    ("/root/sunny9577.txt",   "http"),
-]:
-    SOURCES.append((path, default))
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+SOURCES_DIR = os.path.join(_REPO_ROOT, "scripts", "discovery", "sources")
+PROXIES_DIR = os.path.join(_REPO_ROOT, "proxies")
+KNOWN_FILES = [os.path.join(PROXIES_DIR, f) for f in
+               ("unique.json", "alive.json", "unique_v2.json", "hits_checkpoint.json")]
+OUT_FILE    = os.path.join(SOURCES_DIR, "candidates.txt")
 
-# new fresh sources (phase 2 + phase 2b)
-for p in sorted(glob.glob("/root/sources/*.txt")) + sorted(glob.glob("/root/sources/b2/*.txt")):
+SOURCES = []
+for p in sorted(glob.glob(os.path.join(SOURCES_DIR, "**", "*.txt"), recursive=True)):
+    if os.path.abspath(p) == os.path.abspath(OUT_FILE):
+        continue
     name = os.path.basename(p).lower()
     if "s5" in name or "socks5" in name: sch = "socks5"
     elif "s4" in name or "socks4" in name: sch = "socks4"
@@ -37,11 +31,12 @@ ADDR_RE = re.compile(r"^(?:([a-z]+)://)?([0-9]{1,3}(?:\.[0-9]{1,3}){3}):(\d{2,5}
 
 known_addrs = set()
 known_ips = set()
-try:
-    for rec in json.load(open("/root/unique_working_proxies.json")):
-        if rec.get("addr"): known_addrs.add(rec["addr"])
-        if rec.get("exit_ip"): known_ips.add(rec["exit_ip"])
-except Exception: pass
+for kf in KNOWN_FILES:
+    try:
+        for rec in json.load(open(kf)):
+            if rec.get("addr"): known_addrs.add(rec["addr"])
+            if rec.get("exit_ip"): known_ips.add(rec["exit_ip"])
+    except Exception: pass
 
 seen = set()
 records = []
@@ -69,7 +64,7 @@ for path, default in SOURCES:
 
 random.shuffle(records)
 total = len(records)
-with open("/root/sources/candidates.txt", "w") as out:
+with open(OUT_FILE, "w") as out:
     for scheme, addr in records:
         out.write(f"{scheme} {addr}\n")
 
