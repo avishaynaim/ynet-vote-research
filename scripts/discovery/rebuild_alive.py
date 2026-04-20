@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild proxies/alive.json from /root/hits_checkpoint.json.
+"""Rebuild proxies/alive.json from proxies/hits_checkpoint.json.
 
 The hits_checkpoint already contains freshly ynet-validated proxies,
 so we don't need to re-run check_proxies.py — we just translate the
@@ -11,10 +11,9 @@ the newer hit wins (we just confirmed it works).
 """
 import json, os, sys
 
-HITS  = "/root/hits_checkpoint.json"
-ALIVE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                     "..", "..", "proxies", "alive.json")
-ALIVE = os.path.normpath(ALIVE)
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+HITS  = os.path.join(_REPO_ROOT, "proxies", "hits_checkpoint.json")
+ALIVE = os.path.join(_REPO_ROOT, "proxies", "alive.json")
 
 def to_alive(rec):
     return {
