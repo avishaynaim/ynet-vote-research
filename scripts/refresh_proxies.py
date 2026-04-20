@@ -31,13 +31,8 @@ import urllib.request
 
 REPO_ROOT         = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 PROXIES_DIR       = os.path.join(REPO_ROOT, "proxies")
-# Default to repo-relative paths so the script works in both local and
-# remote (checked-out repo) environments. Overridable via --master-file /
-# --alive-file. Legacy /root/*.json paths are merged on first run.
 MASTER_FILE       = os.path.join(PROXIES_DIR, "unique.json")
 ALIVE_FILE        = os.path.join(PROXIES_DIR, "alive.json")
-LEGACY_MASTER     = "/root/unique_working_proxies.json"
-LEGACY_ALIVE      = "/root/proxies_alive.json"
 
 IP_CHECK_URL      = "https://api.ipify.org?format=json"
 YNET_LIST_URL     = "https://www.ynet.co.il/iphone/json/api/talkbacks/list/v2/yokra14737379/0/1"
@@ -302,9 +297,7 @@ def load_known(master_file=None, alive_file=None):
     master_file = master_file or MASTER_FILE
     alive_file  = alive_file  or ALIVE_FILE
     known_addrs, known_ips, existing = set(), set(), []
-    # Include legacy /root/ paths so a first-run remote agent doesn't
-    # re-probe proxies that were already validated locally.
-    for path in (master_file, alive_file, LEGACY_MASTER, LEGACY_ALIVE):
+    for path in (master_file, alive_file):
         if os.path.exists(path):
             try:
                 data = json.load(open(path, encoding="utf-8"))
