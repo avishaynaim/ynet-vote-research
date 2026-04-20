@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Recover exit IPs for confirmed-working proxies whose ipify lookup timed out
-during the main probe. Reads /root/hits_checkpoint.json, retries IPIFY with
+during the main probe. Reads proxies/hits_checkpoint.json, retries IPIFY with
 generous timeout via 4 fallback endpoints, writes back in place.
 """
 import asyncio, json, os, time
 import aiohttp
 from aiohttp_socks import ProxyConnector
 
-HITS = "/root/hits_checkpoint.json"
-LOG  = "/root/recover.log"
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+HITS = os.path.join(_REPO_ROOT, "proxies", "hits_checkpoint.json")
+LOG  = os.path.join(_REPO_ROOT, "scripts", "discovery", "sources", "recover.log")
 ENDPOINTS = [
     ("https://api.ipify.org?format=json",   "ip"),
     ("https://api64.ipify.org?format=json", "ip"),
