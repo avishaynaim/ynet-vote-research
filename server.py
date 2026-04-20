@@ -19,16 +19,12 @@ import time
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
-from flask import Flask, request, make_response, jsonify, send_from_directory
+from flask import Flask, request, make_response, jsonify, send_from_directory, Response, stream_with_context
 import requests as req
 
 YNET_BASE = "https://www.ynet.co.il"
-# Prefer the repo-tracked alive pool; fall back to the legacy /root path
-# for backwards compatibility with older local setups.
-_REPO_ALIVE  = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "proxies", "alive.json")
-_LEGACY_ALIVE = "/root/proxies_alive.json"
-DEFAULT_PROXIES_FILE = _REPO_ALIVE if os.path.exists(_REPO_ALIVE) else _LEGACY_ALIVE
+DEFAULT_PROXIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                    "proxies", "alive.json")
 
 # ---------------------------------------------------------------------------
 # Config loader
@@ -74,6 +70,7 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
     proxy_workers = int(cfg.get("proxy_workers", 20))
     jitter_min = float(cfg.get("vote_jitter_min_s", 0.0))
     jitter_max = float(cfg.get("vote_jitter_max_s", 10.0))
+    log_lock = threading.Lock()
     print(f"  Proxies : {len(proxy_pool)} loaded from {proxies_file}")
     print(f"  Workers : {proxy_workers} parallel  |  timeout {proxy_timeout}s")
     print(f"  Jitter  : {jitter_min:.1f}-{jitter_max:.1f}s random delay per vote")
@@ -143,6 +140,10 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
             })))
         except Exception as e:
             return cors(make_response(jsonify({"error": str(e)}), 500))
+
+    # ── Per-talkback proxy usage stats ──────────────────────────────────────
+
+    pool_size = len(proxy_pool)
 
     # ── Client event sink ────────────────────────────────────────────────────
     # Accepts a single event {...} or a batch {"events": [...]}.
@@ -240,7 +241,7 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
         if not talkback_id:
             return cors(make_response(jsonify({"error": "talkback_id required"}), 400))
 
-        url     = f"{YNET_BASE}/iphone/json/api/talkbacks/vote"
+        vote_url = f"{YNET_BASE}/iphone/json/api/talkbacks/vote"
         payload = {
             "article_id":      article_id,
             "talkback_id":     talkback_id,
@@ -250,71 +251,197 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
         }
         headers = {**PROXY_HEADERS, "Content-Type": "application/json"}
 
-        # Randomize proxy order each batch (no deterministic pattern).
-        # random.sample(pool, len(pool)) returns a shuffled permutation
-        # WITHOUT replacement — each proxy in the pool is used at most
-        # once per /vote/batch call, even if retries are needed.
-        # Fan out in parallel; stop as soon as `count` HTTP 200s land.
         if proxy_pool:
-            shuffled = random.sample(proxy_pool, len(proxy_pool))
-            assert len({id(e) for e in shuffled}) == len(shuffled), \
-                "duplicate proxy entry in shuffled pool"
-            used_proxies = True
+            # Pick `count` proxies randomly (with replacement if count > pool).
+            # ynet doesn't strictly dedup by IP, so reuse is fine.
+            to_try = [random.choice(proxy_pool) for _ in range(count)]
         else:
-            shuffled = [None] * count
-            used_proxies = False
+            to_try = [None] * count
+        total_to_try = len(to_try)
+        burst_workers = min(proxy_workers, total_to_try)
+
+        # Persistent vote log — every attempt is recorded to JSONL so we can
+        # analyze dedup behavior, cooldown windows, and per-proxy patterns.
+        vote_log_path = os.path.join(results_dir, "vote_log.jsonl")
 
         def _one(entry):
             px_label = entry["label"] if entry else "direct"
-            # Per-request random jitter — each worker sleeps independently so
-            # requests trickle out to ynet instead of arriving in a burst.
-            # Configurable via vote_jitter_min_s / vote_jitter_max_s in config.
-            if jitter_max > 0:
-                time.sleep(random.uniform(jitter_min, jitter_max))
+            px_addr  = entry["proxies"]["http"] if entry else "direct"
+            t0 = time.time()
             try:
                 if entry:
-                    r = req.post(url, json=payload, headers=headers,
+                    r = req.post(vote_url, json=payload, headers=headers,
                                  proxies=entry["proxies"], timeout=proxy_timeout)
                 else:
-                    r = req.post(url, json=payload, headers=headers, timeout=10)
+                    r = req.post(vote_url, json=payload, headers=headers, timeout=10)
+                elapsed = round(time.time() - t0, 2)
+                # Capture response body for analysis
+                try:
+                    resp_body = r.json()
+                except:
+                    resp_body = r.text[:500]
+                rec = {
+                    "ts": datetime.now().isoformat(timespec="milliseconds"),
+                    "proxy": px_label, "addr": px_addr,
+                    "talkback_id": talkback_id, "article_id": article_id,
+                    "like": like, "status": r.status_code,
+                    "ok": r.status_code == 200, "elapsed_s": elapsed,
+                    "response": resp_body,
+                }
+                with log_lock:
+                    with open(vote_log_path, "a") as f:
+                        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 return {"proxy": px_label, "status": r.status_code,
                         "ok": r.status_code == 200}
             except Exception as exc:
+                elapsed = round(time.time() - t0, 2)
+                rec = {
+                    "ts": datetime.now().isoformat(timespec="milliseconds"),
+                    "proxy": px_label, "addr": px_addr,
+                    "talkback_id": talkback_id, "article_id": article_id,
+                    "like": like, "status": f"ERR:{type(exc).__name__}",
+                    "ok": False, "elapsed_s": elapsed, "error": str(exc)[:200],
+                }
+                with log_lock:
+                    with open(vote_log_path, "a") as f:
+                        f.write(json.dumps(rec, ensure_ascii=False) + "\n")
                 return {"proxy": px_label,
                         "status": f"ERR:{type(exc).__name__}", "ok": False}
 
-        sent = ok = errors = 0
-        per_proxy = []
-        ex = ThreadPoolExecutor(max_workers=proxy_workers)
-        try:
-            futures = [ex.submit(_one, e) for e in shuffled]
-            for fut in as_completed(futures):
-                res = fut.result()
-                per_proxy.append({"proxy": res["proxy"], "status": res["status"]})
-                sent += 1
-                if res["ok"]:
-                    ok += 1
+        def generate():
+            sent = ok = errors = 0
+            target = count
+            # Keep retrying until we hit the target number of successes.
+            # Cap total attempts at 10x target to avoid infinite loops if
+            # all proxies are dead.
+            max_attempts = target * 10
+
+            while ok < target and sent < max_attempts:
+                # Submit a batch: enough to fill the remaining target, plus
+                # a buffer based on observed failure rate.
+                remaining = target - ok
+                # Estimate how many to send based on success rate so far
+                if sent > 0 and ok > 0:
+                    rate = ok / sent
+                    batch = int(remaining / rate * 1.3) + 10
                 else:
-                    errors += 1
-                if ok >= count:
-                    break
-        finally:
-            # Don't wait for in-flight requests still running.
-            ex.shutdown(wait=False, cancel_futures=True)
+                    batch = remaining + 20  # first round: add small buffer
+                batch = max(batch, 10)
+                batch = min(batch, max_attempts - sent)
+
+                picks = [random.choice(proxy_pool) for _ in range(batch)]
+                workers = min(proxy_workers, batch)
+                ex = ThreadPoolExecutor(max_workers=workers)
+                try:
+                    futures = [ex.submit(_one, e) for e in picks]
+                    for fut in as_completed(futures):
+                        res = fut.result()
+                        sent += 1
+                        if res["ok"]:
+                            ok += 1
+                        else:
+                            errors += 1
+                        yield f"data: {json.dumps({'t':'p','s':sent,'o':ok,'e':errors,'n':target})}\n\n"
+                        if ok >= target:
+                            break
+                finally:
+                    ex.shutdown(wait=False, cancel_futures=True)
+
+            yield f"data: {json.dumps({'t':'done','s':sent,'o':ok,'e':errors,'n':target,'pool_size':pool_size})}\n\n"
+
+        resp = Response(stream_with_context(generate()), mimetype='text/event-stream')
+        resp.headers["access-control-allow-origin"]  = "*"
+        resp.headers["access-control-allow-methods"] = "GET, POST, OPTIONS"
+        resp.headers["access-control-allow-headers"] = "Content-Type"
+        resp.headers["cache-control"]                = "no-store, no-cache"
+        resp.headers["x-accel-buffering"]            = "no"
+        return resp
+
+    # ── Vote log analysis ──────────────────────────────────────────────────
+    @app.route("/api/vote_log/analysis", methods=["GET", "OPTIONS"])
+    def vote_log_analysis():
+        """Analyze vote log to find dedup patterns."""
+        if request.method == "OPTIONS":
+            return preflight()
+        vote_log_path = os.path.join(results_dir, "vote_log.jsonl")
+        if not os.path.exists(vote_log_path):
+            return cors(make_response(jsonify({"error": "No vote log yet"}), 404))
+
+        tid_filter = request.args.get("talkback_id")
+        records = []
+        with open(vote_log_path) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                    if tid_filter and str(rec.get("talkback_id")) != tid_filter:
+                        continue
+                    records.append(rec)
+                except:
+                    pass
+
+        # Per-proxy stats
+        proxy_stats = {}
+        for r in records:
+            p = r["proxy"]
+            if p not in proxy_stats:
+                proxy_stats[p] = {"ok": 0, "fail": 0, "errors": [], "timestamps": [], "responses": []}
+            if r["ok"]:
+                proxy_stats[p]["ok"] += 1
+                proxy_stats[p]["timestamps"].append(r["ts"])
+                proxy_stats[p]["responses"].append(r.get("response"))
+            else:
+                proxy_stats[p]["fail"] += 1
+                proxy_stats[p]["errors"].append(r.get("status"))
+
+        # Summary
+        total_ok = sum(s["ok"] for s in proxy_stats.values())
+        total_fail = sum(s["fail"] for s in proxy_stats.values())
+        multi_success = {p: s for p, s in proxy_stats.items() if s["ok"] > 1}
+        unique_responses = set()
+        for r in records:
+            if r["ok"]:
+                resp = r.get("response")
+                if isinstance(resp, dict):
+                    unique_responses.add(json.dumps(resp, sort_keys=True))
+                else:
+                    unique_responses.add(str(resp))
 
         return cors(make_response(jsonify({
-            "talkback_id":   talkback_id,
-            "article_id":    article_id,
-            "like":          like,
-            "sent":          sent,
-            "ok":            ok,
-            "errors":        errors,
-            "used_proxies":  used_proxies,
-            "pool_size":     len(proxy_pool),
-            "per_proxy":     per_proxy,
-            "note":          "Ynet returns success even for deduped votes. "
-                             "Actual count change visible after CDN cache expires (~87s).",
+            "total_records": len(records),
+            "total_ok": total_ok,
+            "total_fail": total_fail,
+            "unique_proxies_tried": len(proxy_stats),
+            "unique_proxies_succeeded": sum(1 for s in proxy_stats.values() if s["ok"] > 0),
+            "proxies_succeeded_multiple_times": len(multi_success),
+            "multi_success_details": {p: {"ok": s["ok"], "timestamps": s["timestamps"]}
+                                       for p, s in sorted(multi_success.items(), key=lambda x: -x[1]["ok"])[:20]},
+            "unique_response_bodies": len(unique_responses),
+            "sample_responses": list(unique_responses)[:5],
+            "error_breakdown": {},
         })))
+
+    @app.route("/api/vote_log/raw", methods=["GET", "OPTIONS"])
+    def vote_log_raw():
+        """Return last N vote log entries."""
+        if request.method == "OPTIONS":
+            return preflight()
+        vote_log_path = os.path.join(results_dir, "vote_log.jsonl")
+        if not os.path.exists(vote_log_path):
+            return cors(make_response(jsonify([]), 200))
+        n = int(request.args.get("n", 100))
+        records = []
+        with open(vote_log_path) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    try:
+                        records.append(json.loads(line))
+                    except:
+                        pass
+        return cors(make_response(jsonify(records[-n:])))
 
     # ── Aliases — same handlers without /proxy prefix (backward compat + client)
 
