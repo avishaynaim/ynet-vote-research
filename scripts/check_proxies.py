@@ -11,8 +11,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import requests
 
-SRC       = "/root/unique_working_proxies.json"
-DST       = "/root/proxies_alive.json"
+_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+SRC       = os.path.join(_REPO_ROOT, "proxies", "unique.json")
+DST       = os.path.join(_REPO_ROOT, "proxies", "alive.json")
 TEST_URL  = "https://www.ynet.co.il/iphone/json/api/talkbacks/list/v2/yokra14737379/0/1"
 TIMEOUT   = 10
 WORKERS   = 30
