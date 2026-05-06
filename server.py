@@ -71,6 +71,10 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
     jitter_min = float(cfg.get("vote_jitter_min_s", 0.0))
     jitter_max = float(cfg.get("vote_jitter_max_s", 10.0))
     log_lock = threading.Lock()
+    pool_lock = threading.Lock()
+    failure_counts = {}   # proxy_url -> consecutive failure count
+    EVICT_AFTER = 3       # remove proxy after this many consecutive failures
+    MIN_POOL    = 5       # never evict below this size
     print(f"  Proxies : {len(proxy_pool)} loaded from {proxies_file}")
     print(f"  Workers : {proxy_workers} parallel  |  timeout {proxy_timeout}s")
     print(f"  Jitter  : {jitter_min:.1f}-{jitter_max:.1f}s random delay per vote")
@@ -137,6 +141,25 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
                 "unknown_exit_ip":    no_ip,
                 "max_distinct_votes": len(unique_ips) + no_ip,
                 "source":             os.path.basename(proxies_file),
+            })))
+        except Exception as e:
+            return cors(make_response(jsonify({"error": str(e)}), 500))
+
+    @app.route("/api/proxies", methods=["GET", "OPTIONS"])
+    def proxy_list():
+        if request.method == "OPTIONS":
+            return preflight()
+        try:
+            with open(proxies_file) as f:
+                raw = json.load(f)
+            offset = int(request.args.get("offset", 0))
+            limit  = int(request.args.get("limit", 200))
+            page   = raw[offset:offset + limit]
+            return cors(make_response(jsonify({
+                "total": len(raw),
+                "offset": offset,
+                "limit": limit,
+                "proxies": page,
             })))
         except Exception as e:
             return cors(make_response(jsonify({"error": str(e)}), 500))
@@ -264,6 +287,19 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
         # analyze dedup behavior, cooldown windows, and per-proxy patterns.
         vote_log_path = os.path.join(results_dir, "vote_log.jsonl")
 
+        def _update_proxy_health(addr, ok):
+            if ok:
+                failure_counts.pop(addr, None)
+                return
+            cnt = failure_counts.get(addr, 0) + 1
+            failure_counts[addr] = cnt
+            if cnt >= EVICT_AFTER:
+                with pool_lock:
+                    if len(proxy_pool) > MIN_POOL:
+                        proxy_pool[:] = [e for e in proxy_pool
+                                         if e["proxies"]["http"] != addr]
+                failure_counts.pop(addr, None)
+
         def _one(entry):
             px_label = entry["label"] if entry else "direct"
             px_addr  = entry["proxies"]["http"] if entry else "direct"
@@ -291,8 +327,10 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
                 with log_lock:
                     with open(vote_log_path, "a") as f:
                         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-                return {"proxy": px_label, "status": r.status_code,
-                        "ok": r.status_code == 200}
+                ok_vote = r.status_code == 200
+                if entry:
+                    _update_proxy_health(px_addr, ok_vote)
+                return {"proxy": px_label, "status": r.status_code, "ok": ok_vote}
             except Exception as exc:
                 elapsed = round(time.time() - t0, 2)
                 rec = {
@@ -305,6 +343,8 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
                 with log_lock:
                     with open(vote_log_path, "a") as f:
                         f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                if entry:
+                    _update_proxy_health(px_addr, False)
                 return {"proxy": px_label,
                         "status": f"ERR:{type(exc).__name__}", "ok": False}
 
@@ -329,7 +369,11 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
                 batch = max(batch, 10)
                 batch = min(batch, max_attempts - sent)
 
-                picks = [random.choice(proxy_pool) for _ in range(batch)]
+                with pool_lock:
+                    pool_snap = list(proxy_pool)
+                picks = [random.choice(pool_snap) for _ in range(batch)] if pool_snap else []
+                if not picks:
+                    break
                 workers = min(proxy_workers, batch)
                 ex = ThreadPoolExecutor(max_workers=workers)
                 try:
@@ -442,6 +486,19 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
                     except:
                         pass
         return cors(make_response(jsonify(records[-n:])))
+
+    # ── Admin: hot-reload proxy pool ─────────────────────────────────────────
+
+    @app.route("/admin/reload", methods=["POST", "OPTIONS"])
+    def admin_reload():
+        if request.method == "OPTIONS":
+            return cors(make_response("", 204))
+        nonlocal proxy_pool
+        try:
+            proxy_pool = load_proxies(proxies_file)
+            return cors(jsonify({"loaded": len(proxy_pool), "source": proxies_file}))
+        except Exception as e:
+            return cors(make_response(jsonify({"error": str(e)}), 500))
 
     # ── Aliases — same handlers without /proxy prefix (backward compat + client)
 
