@@ -192,6 +192,38 @@
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    /* ── Tabs ── */
+    .tab-bar { display: flex; gap: 2px; padding: 10px 20px 0; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .tab-btn { background: none; border: none; border-bottom: 2px solid transparent; padding: 7px 16px; font-size: .82rem; font-weight: 600; color: var(--muted); cursor: pointer; transition: all .15s; white-space: nowrap; }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* ── Scraping status table ── */
+    .scrape-wrap { padding: 14px 20px; overflow-x: auto; }
+    .scrape-summary { display: flex; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
+    .scrape-stat { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 10px 16px; font-size: .8rem; }
+    .scrape-stat .sv { font-size: 1.1rem; font-weight: 700; color: var(--accent); display: block; }
+    .scrape-stat .sl { color: var(--muted); font-size: .7rem; }
+    .proxy-table-wrap { overflow-x: auto; }
+    table.proxy-tbl { width: 100%; border-collapse: collapse; font-size: .78rem; }
+    .proxy-tbl th { background: var(--card); color: var(--muted); font-weight: 700; font-size: .7rem; letter-spacing: .07em; text-transform: uppercase; padding: 8px 10px; text-align: right; border-bottom: 2px solid var(--border); cursor: pointer; user-select: none; white-space: nowrap; }
+    .proxy-tbl th:hover { color: var(--text); }
+    .proxy-tbl th.sort-asc::after  { content: ' ↑'; color: var(--accent); }
+    .proxy-tbl th.sort-desc::after { content: ' ↓'; color: var(--accent); }
+    .proxy-tbl td { padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--text); font-family: ui-monospace, monospace; white-space: nowrap; }
+    .proxy-tbl tr:hover td { background: var(--card); }
+    .proxy-tbl .scheme-badge { border-radius: 4px; padding: 1px 6px; font-size: .65rem; font-weight: 700; }
+    .sb-socks5 { background: #1e3a5f; color: #93c5fd; }
+    .sb-http   { background: #422006; color: #fbbf24; }
+    .sb-https  { background: #14532d; color: #4ade80; }
+    .proxy-tbl .no-ip { color: var(--muted); font-style: italic; }
+    .scrape-page { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: .78rem; color: var(--muted); }
+    .scrape-page button { background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 12px; font-size: .78rem; cursor: pointer; }
+    .scrape-page button:disabled { opacity: .35; cursor: not-allowed; }
+    .scrape-page button:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
   </style>
 </head>
 <body>
@@ -288,23 +320,65 @@
 
   </div>
 
-  <!-- ── Comments panel (left) ── -->
-  <div class="comments-panel panel">
-    <div class="panel-title">
-      Comments <span class="pill" id="commentCount">—</span>
+  <!-- ── Left panel with tabs ── -->
+  <div class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-btn active" id="tab-scraping" onclick="switchTab('scraping')">Scraping Status</button>
+      <button class="tab-btn" id="tab-comments" onclick="switchTab('comments')">Comments <span class="pill" id="commentCount">—</span></button>
     </div>
-    <div class="search-wrap">
-      <input type="text" id="searchInput" placeholder="🔍  search comments…"
-             oninput="onSearchInput(this.value)">
+
+    <!-- Scraping Status tab -->
+    <div class="tab-pane active" id="pane-scraping" style="overflow-y:auto;flex:1">
+      <div class="scrape-wrap">
+        <div class="scrape-summary" id="scrapeSummary">
+          <div class="scrape-stat"><span class="sv" id="ssTotal">—</span><span class="sl">Total proxies</span></div>
+          <div class="scrape-stat"><span class="sv" id="ssUniqueIPs">—</span><span class="sl">Unique exit IPs</span></div>
+          <div class="scrape-stat"><span class="sv" id="ssNoIP">—</span><span class="sl">Unknown exit IP</span></div>
+          <div class="scrape-stat"><span class="sv" id="ssSource">—</span><span class="sl">Source file</span></div>
+        </div>
+        <div class="proxy-table-wrap">
+          <table class="proxy-tbl">
+            <thead>
+              <tr>
+                <th onclick="sortProxies('scheme')">Scheme</th>
+                <th onclick="sortProxies('addr')">Address</th>
+                <th onclick="sortProxies('exit_ip')">Exit IP</th>
+                <th onclick="sortProxies('ynet_ms')" class="sort-asc">Response (ms)</th>
+              </tr>
+            </thead>
+            <tbody id="proxyTbody"></tbody>
+          </table>
+        </div>
+        <div class="scrape-page">
+          <button id="btnPrevPage" onclick="proxyPage(-1)" disabled>← Prev</button>
+          <span id="pageInfo">—</span>
+          <button id="btnNextPage" onclick="proxyPage(1)">Next →</button>
+          <span style="margin-right:auto"></span>
+          <button onclick="loadScrapingStatus()">⟳ Refresh</button>
+        </div>
+      </div>
     </div>
-    <div class="sort-bar">
-      <button class="sort-btn" onclick="setSort('newest',this)">Newest</button>
-      <button class="sort-btn active" onclick="setSort('liked',this)">Most Liked</button>
-      <button class="sort-btn" onclick="setSort('disliked',this)">Most Disliked</button>
-      <button class="sort-btn" onclick="setSort('controversial',this)">Controversial</button>
-      <button class="sort-btn" onclick="setSort('zero',this)">Zero Votes</button>
+
+    <!-- Comments tab -->
+    <div class="tab-pane" id="pane-comments" style="overflow-y:auto;flex:1">
+      <div class="comments-panel" style="padding:18px 20px">
+        <div class="search-wrap">
+          <input type="text" id="searchInput" placeholder="🔍  search comments…"
+                 oninput="onSearchInput(this.value)">
+        </div>
+        <div class="sort-bar">
+          <button class="sort-btn" onclick="setSort('newest',this)">Newest</button>
+          <button class="sort-btn active" onclick="setSort('liked',this)">Most Liked</button>
+          <button class="sort-btn" onclick="setSort('disliked',this)">Most Disliked</button>
+          <button class="sort-btn" onclick="setSort('controversial',this)">Controversial</button>
+          <button class="sort-btn" onclick="setSort('zero',this)">Zero Votes</button>
+        </div>
+        <div id="commentsList"></div>
+      </div>
     </div>
-    <div id="commentsList"></div>
+
   </div>
 
 </div>
@@ -537,9 +611,23 @@ async function refreshProxyCapacity() {
     const r = await fetch(`${SERVER_BASE}/api/proxy_capacity`, { cache: 'no-store' });
     if (!r.ok) return;
     const d = await r.json();
+    const total   = d.total_addresses   || 0;
+    const unique  = d.unique_exit_ips   || total;
+
+    // Cap UI inputs to live pool size
+    const slider = document.getElementById('slider');
+    const numInput = document.getElementById('countInput');
+    if (slider)   slider.max   = total;
+    if (numInput) numInput.max = total;
+    Config.maxVotes = total;
+
+    // Clamp current value if it now exceeds the pool
+    const cur = parseInt(document.getElementById('countVal').textContent) || 1;
+    if (cur > total) syncCount(total);
+
     const hint = document.getElementById('capacityHint');
-    if (hint) hint.textContent = `· ${d.total_addresses} proxies (reusable)`;
-    addLog('sys', `Proxy pool: ${d.total_addresses} proxies`);
+    if (hint) hint.textContent = `· ${total} proxies, ${unique} unique IPs`;
+    addLog('sys', `Proxy pool: ${total} proxies (${unique} unique IPs)`);
   } catch (e) {}
 }
 
@@ -981,6 +1069,104 @@ function showError(html) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+//  TABS
+// ═══════════════════════════════════════════════════════════════════════════
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('pane-' + name).classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SCRAPING STATUS
+// ═══════════════════════════════════════════════════════════════════════════
+const ProxyState = {
+  data:       [],
+  sortKey:    'ynet_ms',
+  sortDir:    1,   // 1 = asc, -1 = desc
+  offset:     0,
+  pageSize:   200,
+  total:      0,
+};
+
+async function loadScrapingStatus() {
+  try {
+    const cap = await fetch(`${SERVER_BASE}/api/proxy_capacity`).then(r => r.json());
+    document.getElementById('ssTotal').textContent     = (cap.total_addresses || 0).toLocaleString();
+    document.getElementById('ssUniqueIPs').textContent = (cap.unique_exit_ips || 0).toLocaleString();
+    document.getElementById('ssNoIP').textContent      = (cap.unknown_exit_ip || 0).toLocaleString();
+    document.getElementById('ssSource').textContent    = cap.source || '—';
+  } catch {}
+
+  try {
+    const res = await fetch(`${SERVER_BASE}/api/proxies?offset=${ProxyState.offset}&limit=${ProxyState.pageSize}`).then(r => r.json());
+    ProxyState.total = res.total || 0;
+    ProxyState.data  = res.proxies || [];
+    renderProxyTable();
+    renderProxyPager();
+  } catch (e) {
+    document.getElementById('proxyTbody').innerHTML =
+      `<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">Error loading proxies: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+function sortProxies(key) {
+  const ths = document.querySelectorAll('.proxy-tbl th');
+  const cols = ['scheme','addr','exit_ip','ynet_ms'];
+  if (ProxyState.sortKey === key) {
+    ProxyState.sortDir *= -1;
+  } else {
+    ProxyState.sortKey = key;
+    ProxyState.sortDir = 1;
+  }
+  ths.forEach((th, i) => {
+    th.classList.remove('sort-asc','sort-desc');
+    if (cols[i] === ProxyState.sortKey) {
+      th.classList.add(ProxyState.sortDir === 1 ? 'sort-asc' : 'sort-desc');
+    }
+  });
+  renderProxyTable();
+}
+
+function renderProxyTable() {
+  const rows = [...ProxyState.data].sort((a, b) => {
+    const k = ProxyState.sortKey;
+    const av = a[k] ?? '';
+    const bv = b[k] ?? '';
+    if (av === '' && bv !== '') return 1;
+    if (bv === '' && av !== '') return -1;
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * ProxyState.sortDir;
+    return String(av).localeCompare(String(bv)) * ProxyState.sortDir;
+  });
+
+  document.getElementById('proxyTbody').innerHTML = rows.map(p => {
+    const scheme = p.scheme || '';
+    const schemeClass = scheme === 'socks5' ? 'sb-socks5' : scheme === 'https' ? 'sb-https' : 'sb-http';
+    const ms = p.ynet_ms != null ? p.ynet_ms : '';
+    return `<tr>
+      <td><span class="scheme-badge ${schemeClass}">${esc(scheme)}</span></td>
+      <td>${esc(p.addr || '')}</td>
+      <td>${p.exit_ip ? esc(p.exit_ip) : '<span class="no-ip">—</span>'}</td>
+      <td>${ms !== '' ? ms : '<span class="no-ip">—</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderProxyPager() {
+  const start = ProxyState.offset + 1;
+  const end   = Math.min(ProxyState.offset + ProxyState.pageSize, ProxyState.total);
+  document.getElementById('pageInfo').textContent = `${start}–${end} of ${ProxyState.total.toLocaleString()}`;
+  document.getElementById('btnPrevPage').disabled = ProxyState.offset === 0;
+  document.getElementById('btnNextPage').disabled = end >= ProxyState.total;
+}
+
+function proxyPage(dir) {
+  ProxyState.offset = Math.max(0, ProxyState.offset + dir * ProxyState.pageSize);
+  loadScrapingStatus();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 //  INIT
 // ═══════════════════════════════════════════════════════════════════════════
 (function init() {
@@ -992,6 +1178,7 @@ function showError(html) {
 
   document.getElementById('articleUrl').value = Config.articleUrl;
   renderRecent();
+  loadScrapingStatus();
 
   addLog('sys', `Init — articleUrl=${Config.articleUrl} articleId=${Config.articleId}`,
     { userAgent: navigator.userAgent, url: location.href, config: {
