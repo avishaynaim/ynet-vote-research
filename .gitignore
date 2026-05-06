@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+results/
+scripts/discovery/sources/*.log
+scripts/__pycache__/
+proxies/alive.json

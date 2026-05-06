@@ -1,0 +1,1429 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ynet Vote</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:       #0f1117;
+      --surface:  #1a1d27;
+      --card:     #21253a;
+      --card-sel: #2a3050;
+      --border:   #2e3350;
+      --accent:   #4f8ef7;
+      --like:     #22c55e;
+      --dislike:  #ef4444;
+      --warn:     #f59e0b;
+      --text:     #e2e8f0;
+      --muted:    #8892a4;
+      --r:        10px;
+    }
+    body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+
+    /* ── Header ── */
+    header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 12px 24px; display: flex; align-items: center;
+      justify-content: space-between; position: sticky; top: 0; z-index: 200;
+    }
+    .logo { display: flex; align-items: center; gap: 12px; }
+    .logo h1 { font-size: 1rem; font-weight: 700; color: var(--accent); }
+    .logo small { color: var(--muted); font-size: .75rem; }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .badge { border-radius: 20px; padding: 3px 12px; font-size: .7rem; font-weight: 700; }
+    .badge-connected { background: #14532d; color: #4ade80; border: 1px solid #15803d; }
+    .badge-disconnected { background: #3b1c1c; color: #f87171; border: 1px solid #7f1d1d; }
+
+    /* ── Settings bar ── */
+    .settings-bar {
+      background: #0d1020; border-bottom: 1px solid var(--border);
+      padding: 8px 24px; display: flex; align-items: center; gap: 12px;
+      font-size: .8rem;
+    }
+    .settings-bar label { color: var(--muted); white-space: nowrap; }
+    .settings-bar input {
+      flex: 1; max-width: 320px; background: var(--card); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 10px; color: var(--text); font-size: .82rem; outline: none;
+      font-family: monospace;
+    }
+    .settings-bar input:focus { border-color: var(--accent); }
+    .settings-bar input.error { border-color: var(--dislike); }
+    .btn-sm {
+      border: none; border-radius: 6px; padding: 5px 14px; font-size: .8rem;
+      font-weight: 600; cursor: pointer; transition: all .15s; white-space: nowrap;
+    }
+    .btn-connect { background: var(--accent); color: #fff; }
+    .btn-connect:hover { opacity: .85; }
+    .server-info { color: var(--muted); font-size: .75rem; margin-right: auto; }
+    .refresh-cd { font-size: .68rem; color: var(--muted); min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
+
+    /* ── Layout ── */
+    .layout {
+      display: grid; grid-template-columns: 1fr 360px;
+      flex: 1; overflow: hidden; height: calc(100vh - 100px);
+    }
+
+    /* ── Panels ── */
+    .panel { overflow-y: auto; }
+    .comments-panel { padding: 18px 20px; border-left: 1px solid var(--border); }
+    .control-panel  { background: var(--surface); padding: 18px 18px; display: flex; flex-direction: column; gap: 16px; }
+
+    /* ── Panel header ── */
+    .panel-title { font-size: .7rem; font-weight: 700; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+    .pill { background: var(--border); color: var(--text); border-radius: 20px; padding: 1px 9px; font-size: .68rem; }
+
+    /* ── Search + sort ── */
+    .search-wrap { margin-bottom: 10px; }
+    .search-wrap input { width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 8px 12px; color: var(--text); font-size: .85rem; outline: none; direction: rtl; }
+    .search-wrap input:focus { border-color: var(--accent); }
+    .sort-bar { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+    .sort-btn { background: var(--surface); border: 1px solid var(--border); color: var(--muted); border-radius: 20px; padding: 3px 12px; font-size: .75rem; cursor: pointer; transition: all .15s; }
+    .sort-btn:hover, .sort-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    /* ── Comment card ── */
+    .comment-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 12px 14px; margin-bottom: 8px; cursor: pointer; transition: all .15s; position: relative;
+    }
+    .comment-card:hover { border-color: #4f8ef755; background: var(--card-sel); }
+    .comment-card.selected { border-color: var(--accent); background: var(--card-sel); box-shadow: 0 0 0 2px rgba(79,142,247,.2); }
+    .rec-badge { position: absolute; top: 8px; left: 12px; background: #451a03; color: var(--warn); border: 1px solid #78350f; border-radius: 4px; font-size: .62rem; padding: 1px 6px; font-weight: 700; }
+    .comment-header { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
+    .avatar { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .78rem; font-weight: 700; color: #fff; flex-shrink: 0; }
+    .comment-meta { flex: 1; min-width: 0; }
+    .comment-author { font-weight: 600; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .comment-sub { color: var(--muted); font-size: .7rem; display: flex; gap: 8px; }
+    .comment-text { font-size: .84rem; line-height: 1.55; direction: rtl; margin-bottom: 9px; }
+    .comment-stats { display: flex; gap: 12px; align-items: center; font-size: .78rem; }
+    .stat-like    { color: var(--like);    position: relative; }
+    .stat-dislike { color: var(--dislike); position: relative; }
+    .stat-net { color: var(--muted); } .stat-sims { color: var(--muted); margin-right: auto; font-size: .7rem; }
+
+    /* Count-change animations */
+    @keyframes count-pop  { 0%{transform:scale(1)} 40%{transform:scale(1.45)} 75%{transform:scale(.93)} 100%{transform:scale(1)} }
+    @keyframes delta-rise { 0%{opacity:0;transform:translateX(-50%) translateY(0) scale(.7)} 15%{opacity:1;transform:translateX(-50%) translateY(-2px) scale(1)} 80%{opacity:.9} 100%{opacity:0;transform:translateX(-50%) translateY(-18px) scale(.85)} }
+    @keyframes card-pulse { 0%,100%{box-shadow:none} 35%{box-shadow:0 0 0 2px rgba(34,197,94,.35)} }
+    @keyframes card-pulse-down { 0%,100%{box-shadow:none} 35%{box-shadow:0 0 0 2px rgba(239,68,68,.3)} }
+    .stat-count-up   { animation: count-pop .4s cubic-bezier(.36,.07,.19,.97); display: inline-block; }
+    .stat-delta {
+      position: absolute; top: -3px; left: 50%;
+      transform: translateX(-50%);
+      font-size: .58rem; font-weight: 800; white-space: nowrap;
+      animation: delta-rise 1.5s ease forwards;
+      pointer-events: none; z-index: 10;
+    }
+    .delta-like    { color: #4ade80; }
+    .delta-dislike { color: #f87171; }
+    .card-pulse-like   { animation: card-pulse      .85s ease; }
+    .card-pulse-dislike{ animation: card-pulse-down .85s ease; }
+    .vote-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 7px; overflow: hidden; }
+    .vote-bar-fill { height: 100%; border-radius: 2px; transition: width .5s; }
+    .updated-flash { animation: flash .6s; }
+    @keyframes flash { 0%,100%{border-color:var(--border)} 50%{border-color:var(--like)} }
+
+    /* ── Control panel ── */
+    .selected-box { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 13px; min-height: 75px; }
+    .selected-box.empty { color: var(--muted); font-size: .83rem; line-height: 1.6; display: flex; align-items: center; justify-content: center; text-align: center; }
+    .prev-author { font-weight: 700; font-size: .88rem; margin-bottom: 4px; }
+    .prev-text { font-size: .8rem; color: var(--muted); line-height: 1.5; direction: rtl; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .prev-meta { font-size: .68rem; color: var(--border); margin-top: 6px; display: flex; gap: 12px; }
+
+    /* Count control */
+    .ctrl-label { font-size: .7rem; font-weight: 700; color: var(--muted); letter-spacing: .07em; text-transform: uppercase; margin-bottom: 8px; }
+    .count-grid { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+    .count-grid input[type=range] { accent-color: var(--accent); width: 100%; }
+    .count-val { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; font-size: .9rem; font-weight: 700; color: var(--accent); min-width: 56px; text-align: center; }
+    .count-text { width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 7px 12px; color: var(--text); font-size: .88rem; outline: none; text-align: center; margin-top: 6px; }
+    .count-text:focus { border-color: var(--accent); }
+
+    /* Action buttons */
+    .action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .btn-action { border: none; border-radius: var(--r); padding: 12px; font-size: .88rem; font-weight: 700; cursor: pointer; transition: all .15s; display: flex; align-items: center; justify-content: center; gap: 6px; }
+    .btn-action:disabled { opacity: .35; cursor: not-allowed; }
+    .btn-like    { background: #166534; color: #4ade80; border: 1px solid #15803d; }
+    .btn-dislike { background: #7f1d1d; color: #f87171; border: 1px solid #991b1b; }
+    .btn-like:hover:not(:disabled)    { background: #15803d; }
+    .btn-dislike:hover:not(:disabled) { background: #991b1b; }
+    .btn-full { width: 100%; background: var(--card); color: var(--muted); border: 1px solid var(--border); border-radius: var(--r); padding: 9px; font-size: .82rem; font-weight: 600; cursor: pointer; transition: all .15s; }
+    .btn-full:hover { border-color: var(--accent); color: var(--text); }
+
+    /* Progress bar (shared by vote cards) */
+    .progress-outer { height: 6px; background: var(--surface); border-radius: 4px; overflow: hidden; margin: 6px 0 5px; }
+    .progress-inner { height: 100%; border-radius: 4px; width: 0%; transition: width .25s; background: var(--accent); }
+
+    /* Vote cards stack */
+    .vote-cards { display: flex; flex-direction: column; gap: 6px; }
+    .vote-card {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--r);
+      padding: 9px 11px; transition: opacity .35s, transform .35s;
+    }
+    .vote-card.vc-done    { border-color: #1e3a2a; }
+    .vote-card.vc-error   { border-color: #3a1e1e; }
+    .vote-card.vc-fade    { opacity: 0; transform: translateY(-4px); pointer-events: none; }
+    .vc-header { display: flex; align-items: center; gap: 5px; font-size: .78rem; min-height: 20px; }
+    .vc-icon   { font-size: .95rem; line-height: 1; }
+    .vc-tid    { color: var(--muted); font-size: .7rem; }
+    .vc-lbl    { flex: 1; color: var(--text); font-size: .75rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .vc-close  { background: none; border: none; color: var(--muted); cursor: pointer; font-size: .85rem; padding: 0 2px; line-height: 1; flex-shrink: 0; }
+    .vc-close:hover { color: var(--text); }
+    .vc-stats  { display: flex; align-items: center; gap: 5px; font-size: .73rem; flex-wrap: wrap; }
+    .vc-sent   { color: var(--muted); }
+    .vc-sep    { color: var(--border); }
+    .vc-ok     { color: #4ade80; font-weight: 700; }
+    .vc-err    { color: #f87171; font-weight: 700; }
+    .vc-fresh  { color: var(--accent); font-size: .68rem; margin-left: auto; }
+
+    /* Log */
+    .log-wrap { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+    .log-head { padding: 8px 13px; border-bottom: 1px solid var(--border); font-size: .7rem; font-weight: 700; color: var(--muted); letter-spacing: .07em; text-transform: uppercase; display: flex; justify-content: space-between; }
+    .log-clr { cursor: pointer; font-size: .7rem; } .log-clr:hover { color: var(--text); }
+    .log-body { max-height: 320px; overflow-y: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .log-entry { font-size: .72rem; border-bottom: 1px solid var(--border); }
+    .log-entry:last-child { border-bottom: none; }
+    .log-row { padding: 4px 10px; display: flex; gap: 6px; align-items: center; }
+    .log-toggle { cursor: pointer; color: var(--muted); font-size: .7rem; width: 10px; user-select: none; }
+    .log-toggle:hover { color: var(--text); }
+    .log-toggle-empty { display: inline-block; width: 10px; }
+    .log-t { color: #6b7280; white-space: nowrap; font-size: .68rem; }
+    .log-m { color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .log-p { border-radius: 20px; padding: 1px 7px; font-size: .65rem; font-weight: 700; white-space: nowrap; }
+    .lp-like { background: #14532d; color: #4ade80; }
+    .lp-dislike { background: #7f1d1d; color: #f87171; }
+    .lp-sys { background: var(--border); color: var(--muted); }
+    .lp-http { background: #1e3a8a; color: #93c5fd; }
+    .lp-err { background: #7f1d1d; color: #fca5a5; }
+    .lp-action { background: #374151; color: #d1d5db; }
+    .lp-change { background: #422006; color: #fbbf24; }
+    .log-d { display: none; margin: 0 10px 6px 28px; padding: 6px 8px; background: #0b0f1a; border: 1px solid var(--border); border-radius: 4px; color: #cbd5e1; font-size: .68rem; white-space: pre-wrap; word-break: break-all; max-height: 260px; overflow-y: auto; }
+    .log-d.show { display: block; }
+    .log-empty { padding: 14px; color: var(--muted); font-size: .8rem; text-align: center; }
+
+    /* Empty / error states */
+    .state-msg { padding: 40px 20px; text-align: center; color: var(--muted); font-size: .88rem; line-height: 1.8; }
+    .state-msg code { background: var(--card); border-radius: 4px; padding: 2px 8px; color: var(--accent); font-size: .82rem; }
+
+    /* ── Recent URL chips ── */
+    .recent-chip {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 2px 10px; font-size: .68rem; color: var(--accent); cursor: pointer;
+      transition: all .15s; white-space: nowrap; text-decoration: none;
+      display: inline-flex; align-items: center; gap: 4px;
+    }
+    .recent-chip:hover { background: var(--card-sel); border-color: var(--accent); }
+    .recent-chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .recent-chip .chip-x { color: var(--muted); font-size: .6rem; margin-right: -4px; padding: 0 2px; }
+    .recent-chip .chip-x:hover { color: var(--dislike); }
+
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    /* ── Tabs ── */
+    .tab-bar { display: flex; gap: 2px; padding: 10px 20px 0; background: var(--surface); border-bottom: 1px solid var(--border); }
+    .tab-btn { background: none; border: none; border-bottom: 2px solid transparent; padding: 7px 16px; font-size: .82rem; font-weight: 600; color: var(--muted); cursor: pointer; transition: all .15s; white-space: nowrap; }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+
+    /* ── Scraping status table ── */
+    .scrape-wrap { padding: 14px 20px; overflow-x: auto; }
+    .scrape-summary { display: flex; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
+    .scrape-stat { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 10px 16px; font-size: .8rem; }
+    .scrape-stat .sv { font-size: 1.1rem; font-weight: 700; color: var(--accent); display: block; }
+    .scrape-stat .sl { color: var(--muted); font-size: .7rem; }
+    .proxy-table-wrap { overflow-x: auto; }
+    table.proxy-tbl { width: 100%; border-collapse: collapse; font-size: .78rem; }
+    .proxy-tbl th { background: var(--card); color: var(--muted); font-weight: 700; font-size: .7rem; letter-spacing: .07em; text-transform: uppercase; padding: 8px 10px; text-align: right; border-bottom: 2px solid var(--border); cursor: pointer; user-select: none; white-space: nowrap; }
+    .proxy-tbl th:hover { color: var(--text); }
+    .proxy-tbl th.sort-asc::after  { content: ' ↑'; color: var(--accent); }
+    .proxy-tbl th.sort-desc::after { content: ' ↓'; color: var(--accent); }
+    .proxy-tbl td { padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--text); font-family: ui-monospace, monospace; white-space: nowrap; }
+    .proxy-tbl tr:hover td { background: var(--card); }
+    .proxy-tbl .scheme-badge { border-radius: 4px; padding: 1px 6px; font-size: .65rem; font-weight: 700; }
+    .sb-socks5 { background: #1e3a5f; color: #93c5fd; }
+    .sb-http   { background: #422006; color: #fbbf24; }
+    .sb-https  { background: #14532d; color: #4ade80; }
+    .proxy-tbl .no-ip { color: var(--muted); font-style: italic; }
+    .scrape-page { display: flex; gap: 8px; align-items: center; margin-top: 12px; font-size: .78rem; color: var(--muted); }
+    .scrape-page button { background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 12px; font-size: .78rem; cursor: pointer; }
+    .scrape-page button:disabled { opacity: .35; cursor: not-allowed; }
+    .scrape-page button:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
+  </style>
+</head>
+<body>
+
+<!-- ══ Header ══════════════════════════════════════════════════════════ -->
+<header>
+  <div class="logo">
+    <h1>Ynet Vote</h1>
+    <small id="headerArticle">—</small>
+  </div>
+  <div class="header-right">
+    <span class="badge" id="connBadge">● disconnected</span>
+  </div>
+</header>
+
+<!-- ══ Settings bar ═════════════════════════════════════════════════════ -->
+<div class="settings-bar">
+  <label>Article URL</label>
+  <input type="text" id="articleUrl" placeholder="https://www.ynet.co.il/news/article/yokra14737379"
+         oninput="onArticleUrlInput(this.value)"
+         onkeydown="if(event.key==='Enter') connect()">
+  <button class="btn-sm btn-connect" onclick="connect()">Load</button>
+  <button class="btn-sm" style="background:var(--card);color:var(--muted);border:1px solid var(--border)"
+          onclick="addLog('action','Click: Clear URL');document.getElementById('articleUrl').value='';document.getElementById('articleUrl').focus()">Clear</button>
+  <button class="btn-sm" style="background:#1e3a5f;color:#93c5fd;border:1px solid #2563eb"
+          onclick="manualRefresh()">Refresh</button>
+  <span class="refresh-cd" id="refreshCd"></span>
+  <span class="server-info" id="serverInfo">Not connected</span>
+</div>
+<!-- ══ Recent URLs bar ═════════════════════════════════════════════════ -->
+<div class="settings-bar" id="recentBar" style="gap:8px;padding:4px 24px;display:none">
+  <label style="font-size:.68rem">Recent</label>
+  <div id="recentList" style="display:flex;gap:6px;flex-wrap:wrap;flex:1"></div>
+</div>
+
+<!-- ══ Layout ═══════════════════════════════════════════════════════════ -->
+<div class="layout">
+
+  <!-- ── Control panel (right) ── -->
+  <div class="control-panel panel">
+
+    <div>
+      <div class="panel-title">Selected Comment</div>
+      <div class="selected-box empty" id="selectedBox">
+        ← select a comment from the list
+      </div>
+    </div>
+
+    <div>
+      <div class="ctrl-label">Number of votes <span id="capacityHint" style="opacity:.6;font-weight:normal"></span></div>
+      <div class="count-grid">
+        <input type="range" id="slider" min="1" max="10000" value="10"
+               oninput="syncCount(this.value)">
+        <span class="count-val" id="countVal">10</span>
+      </div>
+      <input type="number" class="count-text" id="countInput"
+             min="1" max="99999" value="10" oninput="syncCount(this.value)">
+    </div>
+
+    <div>
+      <div class="ctrl-label">Action</div>
+      <div class="action-grid">
+        <button class="btn-action btn-like"    id="btnLike"    disabled onclick="vote(true)">👍 Like</button>
+        <button class="btn-action btn-dislike" id="btnDislike" disabled onclick="vote(false)">👎 Dislike</button>
+      </div>
+    </div>
+
+    <div class="vote-cards" id="voteCards"></div>
+
+    <div class="log-wrap">
+      <div class="log-head">
+        Activity Log
+        <span class="log-clr" onclick="exportLog()" style="margin-right:8px">Export</span>
+        <span class="log-clr" onclick="clearLog()">Clear</span>
+      </div>
+      <div class="log-body" id="logBody">
+        <div class="log-empty">No activity</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── Left panel with tabs ── -->
+  <div class="panel" style="display:flex;flex-direction:column;overflow:hidden">
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button class="tab-btn" id="tab-scraping" onclick="switchTab('scraping')">Scraping Status</button>
+      <button class="tab-btn active" id="tab-comments" onclick="switchTab('comments')">Comments <span class="pill" id="commentCount">—</span></button>
+    </div>
+
+    <!-- Scraping Status tab -->
+    <div class="tab-pane" id="pane-scraping" style="overflow-y:auto;flex:1">
+      <div class="scrape-wrap">
+        <div class="scrape-summary" id="scrapeSummary">
+          <div class="scrape-stat"><span class="sv" id="ssTotal">—</span><span class="sl">Total proxies</span></div>
+          <div class="scrape-stat"><span class="sv" id="ssUniqueIPs">—</span><span class="sl">Unique exit IPs</span></div>
+          <div class="scrape-stat"><span class="sv" id="ssNoIP">—</span><span class="sl">Unknown exit IP</span></div>
+          <div class="scrape-stat"><span class="sv" id="ssSource">—</span><span class="sl">Source file</span></div>
+        </div>
+        <div class="proxy-table-wrap">
+          <table class="proxy-tbl">
+            <thead>
+              <tr>
+                <th onclick="sortProxies('scheme')">Scheme</th>
+                <th onclick="sortProxies('addr')">Address</th>
+                <th onclick="sortProxies('exit_ip')">Exit IP</th>
+                <th onclick="sortProxies('ynet_ms')" class="sort-asc">Response (ms)</th>
+              </tr>
+            </thead>
+            <tbody id="proxyTbody"></tbody>
+          </table>
+        </div>
+        <div class="scrape-page">
+          <button id="btnPrevPage" onclick="proxyPage(-1)" disabled>← Prev</button>
+          <span id="pageInfo">—</span>
+          <button id="btnNextPage" onclick="proxyPage(1)">Next →</button>
+          <span style="margin-right:auto"></span>
+          <button onclick="loadScrapingStatus()">⟳ Refresh</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Comments tab -->
+    <div class="tab-pane active" id="pane-comments" style="overflow-y:auto;flex:1">
+      <div class="comments-panel" style="padding:18px 20px">
+        <div class="search-wrap">
+          <input type="text" id="searchInput" placeholder="🔍  search comments…"
+                 oninput="onSearchInput(this.value)">
+        </div>
+        <div class="sort-bar">
+          <button class="sort-btn" onclick="setSort('newest',this)">Newest</button>
+          <button class="sort-btn active" onclick="setSort('liked',this)">Most Liked</button>
+          <button class="sort-btn" onclick="setSort('disliked',this)">Most Disliked</button>
+          <button class="sort-btn" onclick="setSort('controversial',this)">Controversial</button>
+          <button class="sort-btn" onclick="setSort('zero',this)">Zero Votes</button>
+        </div>
+        <div id="commentsList"></div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════════════
+//  CONFIG — everything lives here, nothing is hardcoded elsewhere in the file
+// ═══════════════════════════════════════════════════════════════════════════
+// The local proxy server — all requests go through here
+const SERVER_BASE = location.origin || 'http://127.0.0.1:5001';
+
+const Config = {
+  // Full article URL as entered by the user
+  articleUrl: 'https://www.ynet.co.il/news/article/yokra14737379',
+  // Extracted from articleUrl
+  articleId:  'yokra14737379',
+  maxVotes:   99999, // no real limit — proxies are reusable
+
+  endpoints: {
+    comments:  '/api/comments',
+    voteBatch: '/vote/batch',
+    vote:      '/iphone/json/api/talkbacks/vote',
+  },
+
+  // Always route through the local proxy server
+  get apiBase() {
+    return SERVER_BASE;
+  },
+
+  // Parse the article ID from a full ynet URL.
+  // Supports patterns like:
+  //   https://www.ynet.co.il/news/article/yokra14737379
+  //   https://www.ynet.co.il/economy/article/yokra12345678
+  //   https://www.ynet.co.il/anything/.../yokra14737379
+  //   yokra14737379  (just the ID itself)
+  parseArticleUrl(url) {
+    url = (url || '').trim();
+    if (!url) return null;
+    // If it's just an article ID (no slashes, no protocol)
+    if (!url.includes('/') && !url.includes(':')) return url;
+    // Extract last meaningful path segment
+    try {
+      const u = new URL(url);
+      const segments = u.pathname.split('/').filter(Boolean);
+      // Return the last segment — that's the article ID
+      return segments.length ? segments[segments.length - 1] : null;
+    } catch {
+      // Fallback: grab the last segment after splitting on /
+      const segments = url.split('/').filter(Boolean);
+      return segments.length ? segments[segments.length - 1] : null;
+    }
+  },
+
+  setArticleUrl(url) {
+    this.articleUrl = url;
+    const id = this.parseArticleUrl(url);
+    if (id) this.articleId = id;
+    return id;
+  },
+
+  url(key, params = {}) {
+    let path = this.endpoints[key] || key;
+    const qs = {};
+    Object.entries(params).forEach(([k, v]) => {
+      const replaced = path.replace(`{${k}}`, v);
+      if (replaced !== path) path = replaced;
+      else qs[k] = v;
+    });
+    const query = Object.keys(qs).length ? '?' + new URLSearchParams(qs).toString() : '';
+    return this.apiBase + path + query;
+  }
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════════════════
+const State = {
+  comments:   [],
+  selectedId: null,
+  sort:       'liked',
+  log:        [],
+  connected:  false,
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  API — all HTTP calls go through here; uses Config.url()
+//  Every request is logged (console group + activity log entry).
+// ═══════════════════════════════════════════════════════════════════════════
+let _reqSeq = 0;
+let _voteSeq = 0;        // increments each vote; only the latest owns the progress bar
+let _activeVotes = 0;    // count of in-flight vote streams
+
+async function loggedFetch(url, opts = {}) {
+  const id      = ++_reqSeq;
+  const method  = (opts.method || 'GET').toUpperCase();
+  const started = performance.now();
+  const reqBody = opts.body != null ? tryParseJSON(opts.body) : undefined;
+
+  console.groupCollapsed(`%c→ HTTP #${id} ${method} ${url}`, 'color:#4f8ef7');
+  console.log('headers:', opts.headers || {});
+  if (reqBody !== undefined) console.log('body:', reqBody);
+  console.groupEnd();
+
+  addLog('http', `→ #${id} ${method} ${shortUrl(url)}`, {
+    id, phase: 'request', method, url, headers: opts.headers || {}, body: reqBody,
+  });
+
+  let resp, text, parsed, err;
+  try {
+    resp = await fetch(url, opts);
+    text = await resp.text();
+    try { parsed = JSON.parse(text); } catch { parsed = text; }
+  } catch (e) {
+    err = e;
+  }
+  const durMs = Math.round(performance.now() - started);
+
+  if (err) {
+    console.group(`%c✗ HTTP #${id} ${method} ${url} — network error (${durMs}ms)`, 'color:#ef4444');
+    console.error(err);
+    console.groupEnd();
+    addLog('http-err', `✗ #${id} ${method} ${shortUrl(url)} — ${err.message} (${durMs}ms)`,
+      { id, phase: 'error', method, url, error: err.message, durMs });
+    throw err;
+  }
+
+  const ok = resp.ok;
+  const color = ok ? '#22c55e' : '#ef4444';
+  console.groupCollapsed(`%c← HTTP #${id} ${resp.status} ${method} ${url} (${durMs}ms)`, `color:${color}`);
+  const respHeaders = {};
+  resp.headers.forEach((v, k) => { respHeaders[k] = v; });
+  console.log('status:', resp.status, resp.statusText);
+  console.log('headers:', respHeaders);
+  console.log('body:', parsed);
+  console.groupEnd();
+
+  addLog(ok ? 'http-ok' : 'http-err',
+    `← #${id} ${resp.status} ${method} ${shortUrl(url)} (${durMs}ms)`,
+    { id, phase: 'response', method, url, status: resp.status, statusText: resp.statusText,
+      headers: respHeaders, body: parsed, durMs });
+
+  if (!ok) {
+    const e = new Error(`HTTP ${resp.status}`);
+    e.status = resp.status;
+    e.body = parsed;
+    throw e;
+  }
+  return parsed;
+}
+
+function tryParseJSON(s) { try { return JSON.parse(s); } catch { return s; } }
+function shortUrl(u) { try { const x = new URL(u, location.origin); return x.pathname + x.search; } catch { return u; } }
+
+const API = {
+  async get(key, params = {}) {
+    return loggedFetch(Config.url(key, params));
+  },
+  async post(key, body, params = {}) {
+    return loggedFetch(Config.url(key, params), {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+  },
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CONNECTION
+// ═══════════════════════════════════════════════════════════════════════════
+async function connect() {
+  const urlInput = document.getElementById('articleUrl').value.trim();
+  if (urlInput) {
+    const id = Config.setArticleUrl(urlInput);
+    if (!id) {
+      document.getElementById('articleUrl').classList.add('error');
+      document.getElementById('serverInfo').textContent = 'Could not parse article ID from URL';
+      addLog('sys', `Failed to parse article ID from: ${urlInput}`);
+      return;
+    }
+  }
+
+  addLog('action', `Click: Load → ${Config.articleUrl}`, { articleUrl: Config.articleUrl, articleId: Config.articleId });
+
+  document.getElementById('articleUrl').classList.remove('error');
+  document.getElementById('serverInfo').textContent = 'Loading…';
+  stopCommentAutoRefresh();
+  setConnected(false);
+
+  try {
+    await loggedFetch(Config.url('comments', { article_id: Config.articleId }));
+
+    await refreshProxyCapacity();
+
+    setConnected(true);
+
+    document.getElementById('serverInfo').textContent =
+      `article: ${Config.articleId}  ·  via ${SERVER_BASE}`;
+    document.getElementById('headerArticle').textContent = Config.articleId;
+
+    await loadComments();
+    startCommentAutoRefresh();
+    addRecent(Config.articleUrl);
+    addLog('sys', `Connected — article ${Config.articleId}`);
+
+  } catch(e) {
+    document.getElementById('articleUrl').classList.add('error');
+    const isTypeError = e instanceof TypeError;
+    const msg = isTypeError
+      ? `Failed to fetch — proxy server unreachable`
+      : e.message;
+    document.getElementById('serverInfo').textContent = `Error: ${msg}`;
+    addLog('sys', `Connection failed: ${msg}`);
+    showError(
+      `Cannot load article <code>${Config.articleId}</code><br><br>` +
+      (isTypeError
+        ? `Proxy server unreachable at <code>${SERVER_BASE}</code>.<br>Make sure the server is running: <code>python3 server.py</code>`
+        : `Server returned: ${msg}`)
+    );
+  }
+}
+
+function setConnected(ok) {
+  State.connected = ok;
+  const badge = document.getElementById('connBadge');
+  badge.textContent = ok ? '● connected' : '● disconnected';
+  badge.className   = `badge ${ok ? 'badge-connected' : 'badge-disconnected'}`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  PROXY CAPACITY — show pool size info (no cap — proxies are reusable)
+// ═══════════════════════════════════════════════════════════════════════════
+async function refreshProxyCapacity() {
+  try {
+    const r = await fetch(`${SERVER_BASE}/api/proxy_capacity`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const d = await r.json();
+    const total   = d.total_addresses   || 0;
+    const unique  = d.unique_exit_ips   || total;
+
+    // Max = pool size. refreshRemainingForTalkback overrides this per-comment.
+    const newMax = Math.max(total, 1);
+    const slider = document.getElementById('slider');
+    const numInput = document.getElementById('countInput');
+    if (slider)   slider.max   = newMax;
+    if (numInput) numInput.max = newMax;
+    Config.maxVotes = newMax;
+
+    const hint = document.getElementById('capacityHint');
+    if (hint) hint.textContent = `· ${total} proxies, ${unique} unique IPs`;
+    addLog('sys', `Proxy pool: ${total} proxies (${unique} unique IPs)`);
+  } catch (e) {}
+}
+
+async function refreshRemainingForTalkback(talkbackId) {
+  if (!talkbackId) { await refreshProxyCapacity(); return; }
+  try {
+    const r = await fetch(`${SERVER_BASE}/api/proxy_remaining/${talkbackId}`, { cache: 'no-store' });
+    if (!r.ok) { await refreshProxyCapacity(); return; }
+    const d = await r.json();
+    const remaining = d.remaining ?? 0;
+    const used      = d.used_ok   ?? 0;
+    const total     = d.pool_total ?? 0;
+    const newMax = Math.max(remaining, 1);
+    const slider   = document.getElementById('slider');
+    const numInput = document.getElementById('countInput');
+    if (slider)   slider.max   = newMax;
+    if (numInput) numInput.max = newMax;
+    Config.maxVotes = newMax;
+    // Clamp current value if it now exceeds the fresh pool
+    syncCount(document.getElementById('countInput').value);
+    const hint = document.getElementById('capacityHint');
+    if (hint) hint.textContent = `· ${total} proxies · ${used} used for #${talkbackId} · ${remaining} fresh`;
+    addLog('sys', `Talkback #${talkbackId}: ${remaining} fresh proxies, ${used} already voted`);
+  } catch (e) { await refreshProxyCapacity(); }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  COMMENTS
+// ═══════════════════════════════════════════════════════════════════════════
+async function loadComments() {
+  document.getElementById('headerArticle').textContent = Config.articleId;
+
+  try {
+    const data = await API.get('comments', { article_id: Config.articleId });
+    State.comments = data.comments;
+    document.getElementById('commentCount').textContent = data.total;
+    renderComments();
+    // Re-select previously selected comment, or auto-select first on initial load
+    if (State.selectedId) {
+      const still = State.comments.find(c => c.id === State.selectedId);
+      if (still) updateSelectedBox(still);
+    } else if (State.comments.length > 0) {
+      await selectComment(State.comments[0].id, false);  // no scroll on auto-select
+    }
+  } catch(e) {
+    showError(`Failed to load comments: ${e.message}`);
+  }
+}
+
+const AUTO_REFRESH_MS = 15000;
+let _commentRefreshTimer = null;
+let _refreshCdTimer      = null;
+let _refreshRunning      = false;
+let _refreshCountdown    = 0;
+
+function _setCd(text) {
+  const el = document.getElementById('refreshCd');
+  if (el) el.textContent = text;
+}
+
+function _startCdTick(seconds) {
+  if (_refreshCdTimer) { clearInterval(_refreshCdTimer); _refreshCdTimer = null; }
+  _refreshCountdown = seconds;
+  _setCd(`↻ ${_refreshCountdown}s`);
+  _refreshCdTimer = setInterval(() => {
+    _refreshCountdown = Math.max(0, _refreshCountdown - 1);
+    _setCd(_refreshCountdown > 0 ? `↻ ${_refreshCountdown}s` : '↻');
+    if (_refreshCountdown <= 0) { clearInterval(_refreshCdTimer); _refreshCdTimer = null; }
+  }, 1000);
+}
+
+function _scheduleNextRefresh(delayMs) {
+  if (_commentRefreshTimer) { clearTimeout(_commentRefreshTimer); _commentRefreshTimer = null; }
+  _startCdTick(Math.ceil(delayMs / 1000));
+  _commentRefreshTimer = setTimeout(() => {
+    _commentRefreshTimer = null;
+    // silentRefreshComments manages _refreshRunning internally and always
+    // calls _scheduleNextRefresh when done — chain never dies.
+    silentRefreshComments();
+  }, delayMs);
+}
+
+function startCommentAutoRefresh() {
+  stopCommentAutoRefresh();
+  _scheduleNextRefresh(AUTO_REFRESH_MS);
+}
+
+function stopCommentAutoRefresh() {
+  if (_commentRefreshTimer) { clearTimeout(_commentRefreshTimer); _commentRefreshTimer = null; }
+  if (_refreshCdTimer)      { clearInterval(_refreshCdTimer);    _refreshCdTimer = null; }
+  _setCd('');
+}
+
+// Recover immediately when Samsung or any browser returns from background
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && State.connected) {
+    stopCommentAutoRefresh();
+    silentRefreshComments(); // fires immediately; reschedules itself when done
+  }
+});
+
+function sorted(list) {
+  const s = [...list];
+  if (State.sort === 'newest')        s.sort((a,b) => b.id - a.id);
+  if (State.sort === 'liked')         s.sort((a,b) => b.likes - a.likes);
+  if (State.sort === 'disliked')      s.sort((a,b) => b.unlikes - a.unlikes);
+  if (State.sort === 'controversial') s.sort((a,b) => (b.likes+b.unlikes)-(a.likes+a.unlikes));
+  if (State.sort === 'zero')          s.sort((a,b) => (a.likes+a.unlikes)-(b.likes+b.unlikes));
+  return s;
+}
+
+function renderComments() {
+  const q = document.getElementById('searchInput').value.trim().toLowerCase();
+  let list = q
+    ? State.comments.filter(c =>
+        c.text.toLowerCase().includes(q) ||
+        c.author.toLowerCase().includes(q) ||
+        String(c.id).includes(q))
+    : [...State.comments];
+
+  list = sorted(list);
+  const el = document.getElementById('commentsList');
+
+  if (!list.length) {
+    el.innerHTML = '<div class="state-msg">No comments found</div>';
+    return;
+  }
+
+  el.innerHTML = list.map(c => {
+    const total   = c.likes + c.unlikes;
+    const pct     = total > 0 ? Math.round(c.likes / total * 100) : 0;
+    const init    = (c.author || '?').trim()[0];
+    const time    = c.pubDate ? c.pubDate.substring(11,16) : '';
+    const sel     = c.id === State.selectedId;
+    const barColor= c.net >= 0 ? '#22c55e' : '#ef4444';
+
+    return `<div class="comment-card${sel ? ' selected' : ''}"
+                 id="card-${c.id}" onclick="selectComment(${c.id})">
+      ${c.recommended ? '<span class="rec-badge">★ מומלץ</span>' : ''}
+      <div class="comment-header">
+        <div class="avatar" style="background:${avatarColor(c.author)}">${esc(init)}</div>
+        <div class="comment-meta">
+          <div class="comment-author">${esc(c.author) || 'אנונימי'}</div>
+          <div class="comment-sub"><span>${time}</span><span>#${c.id}</span></div>
+        </div>
+      </div>
+      <div class="comment-text">${esc(c.text)}</div>
+      <div class="comment-stats">
+        <span class="stat-like">👍 ${c.likes}</span>
+        <span class="stat-dislike">👎 ${c.unlikes}</span>
+        <span class="stat-net">net ${c.net >= 0 ? '+' : ''}${c.net}</span>
+        ${c.vote_count > 0 ? `<span class="stat-sims">🔁 ${c.vote_count}</span>` : ''}
+      </div>
+      ${total > 0 ? `<div class="vote-bar">
+        <div class="vote-bar-fill" style="width:${pct}%;background:${barColor}"></div>
+      </div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function selectComment(id, scroll = true) {
+  State.selectedId = id;
+  const c = State.comments.find(x => x.id === id);
+  if (!c) return;
+  if (scroll) addLog('action', `Click: select comment #${id} — ${c.author || 'אנונימי'}`,
+    { id, author: c.author, text: c.text, likes: c.likes, unlikes: c.unlikes });
+  document.querySelectorAll('.comment-card').forEach(el => el.classList.remove('selected'));
+  const card = document.getElementById(`card-${id}`);
+  if (card) {
+    card.classList.add('selected');
+    if (scroll) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+  updateSelectedBox(c);
+  document.getElementById('btnLike').disabled    = false;
+  document.getElementById('btnDislike').disabled = false;
+}
+
+// No per-talkback tracking — proxies are reused freely.
+
+function updateSelectedBox(c) {
+  const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  document.getElementById('selectedBox').className = 'selected-box';
+  document.getElementById('selectedBox').innerHTML = `
+    <div class="prev-author">${esc(c.author) || 'אנונימי'}</div>
+    <div class="prev-text">${esc(c.text)}</div>
+    <div class="prev-meta">
+      <span>ID: ${c.id}</span>
+      <span>👍 ${c.likes}</span>
+      <span>👎 ${c.unlikes}</span>
+      <span>net ${c.net >= 0 ? '+' : ''}${c.net}</span>
+      <span style="opacity:.5;font-size:.7rem">↻ ${now}</span>
+    </div>`;
+}
+
+async function silentRefreshComments() {
+  // Guard: only one refresh at a time. Skip if a vote is active — but still
+  // reschedule so the chain never dies.
+  if (_refreshRunning) { _scheduleNextRefresh(AUTO_REFRESH_MS); return; }
+  if (_activeVotes > 0) { _scheduleNextRefresh(AUTO_REFRESH_MS); return; }
+
+  _refreshRunning = true;
+  _setCd('↻');
+
+  const abort    = new AbortController();
+  const abortTmr = setTimeout(() => abort.abort(), 25000); // 25s hard ceiling
+
+  try {
+    const url  = Config.url('comments', { article_id: Config.articleId });
+    const resp = await fetch(url, { cache: 'no-store', signal: abort.signal });
+    if (!resp.ok) { addLog('sys', `↻ refresh HTTP ${resp.status}`); return; }
+    const data = await resp.json();
+    if (!Array.isArray(data.comments)) return;
+
+    // ── Diff: find what changed ──────────────────────────────────────────
+    const oldById  = {};
+    State.comments.forEach(c => { oldById[c.id] = { likes: c.likes, unlikes: c.unlikes }; });
+    const existingIds = new Set(Object.keys(oldById).map(Number));
+    const hasNewItems = data.comments.some(c => !existingIds.has(c.id));
+
+    State.comments = data.comments;
+    document.getElementById('commentCount').textContent = data.total;
+
+    if (hasNewItems) {
+      // New comment appeared — full rebuild, then animate new cards
+      renderComments();
+    } else {
+      // Smart update: touch only changed cards, preserve scroll & selection
+      data.comments.forEach(c => {
+        const cardEl = document.getElementById(`card-${c.id}`);
+        if (!cardEl) return;
+        const old        = oldById[c.id] || { likes: 0, unlikes: 0 };
+        const likeDelta  = c.likes   - old.likes;
+        const ulikeDelta = c.unlikes - old.unlikes;
+        const changed    = likeDelta !== 0 || ulikeDelta !== 0;
+
+        // Update stats spans in place
+        const statsEl = cardEl.querySelector('.comment-stats');
+        if (statsEl) {
+          const likeSpan  = statsEl.querySelector('.stat-like');
+          const ulikeSpan = statsEl.querySelector('.stat-dislike');
+          const netSpan   = statsEl.querySelector('.stat-net');
+          if (likeSpan)  likeSpan.innerHTML  = `👍 ${c.likes}${likeDelta  > 0 ? `<span class="stat-delta delta-like">+${likeDelta}</span>`  : ''}`;
+          if (ulikeSpan) ulikeSpan.innerHTML = `👎 ${c.unlikes}${ulikeDelta > 0 ? `<span class="stat-delta delta-dislike">+${ulikeDelta}</span>` : ''}`;
+          if (netSpan)   netSpan.textContent  = `net ${c.net >= 0 ? '+' : ''}${c.net}`;
+        }
+        // Update vote bar
+        const barEl = cardEl.querySelector('.vote-bar-fill');
+        if (barEl) {
+          const total = c.likes + c.unlikes;
+          barEl.style.width      = total > 0 ? `${Math.round(c.likes / total * 100)}%` : '0%';
+          barEl.style.background = c.net >= 0 ? '#22c55e' : '#ef4444';
+        }
+        // Animate changed cards
+        if (changed) {
+          const pulseClass = likeDelta >= ulikeDelta ? 'card-pulse-like' : 'card-pulse-dislike';
+          cardEl.classList.remove('card-pulse-like', 'card-pulse-dislike');
+          void cardEl.offsetWidth; // restart animation
+          cardEl.classList.add(pulseClass);
+          cardEl.addEventListener('animationend', () =>
+            cardEl.classList.remove('card-pulse-like', 'card-pulse-dislike'), { once: true });
+          // Pop the changed numbers
+          ['.stat-like', '.stat-dislike'].forEach(sel => {
+            const el = cardEl.querySelector(sel);
+            if (!el) return;
+            el.classList.remove('stat-count-up');
+            void el.offsetWidth;
+            el.classList.add('stat-count-up');
+            el.addEventListener('animationend', () => el.classList.remove('stat-count-up'), { once: true });
+          });
+        }
+      });
+    }
+
+    if (State.selectedId) {
+      const still = State.comments.find(c => c.id === State.selectedId);
+      if (still) updateSelectedBox(still);
+    }
+    addLog('sys', `↻ ${data.total} comments refreshed`);
+
+  } catch (e) {
+    if (e.name !== 'AbortError') addLog('sys', `↻ refresh error: ${e.message}`);
+  } finally {
+    clearTimeout(abortTmr);
+    _refreshRunning = false;
+    _scheduleNextRefresh(AUTO_REFRESH_MS); // ALWAYS reschedule — chain never dies
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VOTING
+// ═══════════════════════════════════════════════════════════════════════════
+
+function _parseSseEvents(text) {
+  const events = [];
+  for (const part of text.split('\n\n')) {
+    for (const line of part.split('\n')) {
+      if (!line.startsWith('data: ')) continue;
+      try { events.push(JSON.parse(line.slice(6))); } catch {}
+    }
+  }
+  return events;
+}
+
+function _removeCard(card) {
+  card.classList.add('vc-fade');
+  setTimeout(() => card.remove(), 380);
+}
+
+async function vote(like) {
+  if (!State.selectedId) return;
+  if (_activeVotes >= 2) {
+    addLog('sys', 'Blocked: max 2 concurrent campaigns (server thread limit). Wait for one to finish.');
+    return;
+  }
+  const count      = parseInt(document.getElementById('countInput').value) || 10;
+  const c          = State.comments.find(x => x.id === State.selectedId);
+  const talkbackId = State.selectedId;
+  ++_voteSeq;
+  _activeVotes++;
+
+  addLog('action', `Click: ${like ? '👍 Like' : '👎 Dislike'} ×${count} on #${talkbackId}`,
+    { action: like ? 'like' : 'dislike', count, talkback_id: talkbackId, articleId: Config.articleId });
+
+  // ── Build a new card for this vote ──────────────────────────────────────
+  const card = document.createElement('div');
+  card.className = 'vote-card';
+  card.innerHTML = `
+    <div class="vc-header">
+      <span class="vc-icon">${like ? '👍' : '👎'}</span>
+      <span class="vc-tid">#${talkbackId}</span>
+      <span class="vc-lbl">×${count} — starting…</span>
+      <button class="vc-close" title="Dismiss">×</button>
+    </div>
+    <div class="progress-outer"><div class="progress-inner"></div></div>
+    <div class="vc-stats">
+      <span class="vc-sent">0/${count}</span>
+      <span class="vc-sep">·</span>
+      <span class="vc-ok">✓ 0</span>
+      <span class="vc-sep">·</span>
+      <span class="vc-err">✗ 0</span>
+      <span class="vc-fresh"></span>
+    </div>`;
+
+  const container = document.getElementById('voteCards');
+  container.insertBefore(card, container.firstChild);
+
+  // DOM refs scoped to this card
+  const elLbl   = card.querySelector('.vc-lbl');
+  const elBar   = card.querySelector('.progress-inner');
+  const elSent  = card.querySelector('.vc-sent');
+  const elOk    = card.querySelector('.vc-ok');
+  const elErr   = card.querySelector('.vc-err');
+  const elFresh = card.querySelector('.vc-fresh');
+  const elClose = card.querySelector('.vc-close');
+  elClose.addEventListener('click', () => _removeCard(card));
+
+  function _updateProgress(s, o, e, n) {
+    // Bar tracks accepted/target (goal progress), not sent/target
+    elBar.style.width  = `${Math.round((o / n) * 100)}%`;
+    elSent.textContent = `${s} tried`;
+    elOk.textContent   = `✓ ${o}/${n}`;
+    elErr.textContent  = `✗ ${e}`;
+  }
+
+  // ── Fire the vote request ────────────────────────────────────────────────
+  const abort = new AbortController();
+  const abortTimer = setTimeout(() => abort.abort(), 300_000);
+
+  try {
+    const resp = await fetch(Config.url('voteBatch'), {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ article_id: Config.articleId, talkback_id: talkbackId, count, like }),
+      signal:  abort.signal,
+    });
+
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
+
+    let last = null;
+
+    if (resp.body && typeof resp.body.getReader === 'function') {
+      const reader = resp.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const parts = buf.split('\n\n');
+        buf = parts.pop();
+        for (const d of _parseSseEvents(parts.join('\n\n'))) {
+          last = d;
+          if (d.t === 'p') _updateProgress(d.s, d.o, d.e, d.n);
+        }
+      }
+    } else {
+      elLbl.textContent = `×${count} — voting…`;
+      const text = await resp.text();
+      for (const d of _parseSseEvents(text)) { last = d; }
+    }
+
+    if (last && last.t === 'done') {
+      addLog(like ? 'like' : 'dislike', `#${talkbackId} — ${last.o}/${last.s} accepted`);
+      _updateProgress(last.s, last.o, last.e, last.n);
+      elBar.style.width      = '100%';
+      elBar.style.background = last.o > 0 ? 'var(--like)' : 'var(--dislike)';
+      elLbl.textContent      = `Done — ${last.o} accepted`;
+      const rem  = last.remaining ?? last.pool_size;
+      const hf   = last.hard_fail ?? 0;
+      if (rem != null) elFresh.textContent = hf > 0 ? `${rem} fresh · ${hf} rejected` : `${rem} fresh`;
+      card.classList.add('vc-done');
+      setTimeout(() => _removeCard(card), 12_000);
+    }
+
+  } catch (e) {
+    elBar.style.width      = '100%';
+    elBar.style.background = 'var(--dislike)';
+    elLbl.textContent      = `Error: ${e.message}`;
+    card.classList.add('vc-error');
+    addLog('sys', `Vote #${talkbackId} failed: ${e.message}`);
+  } finally {
+    clearTimeout(abortTimer);
+  }
+
+  _activeVotes--;
+  if (_activeVotes === 0) {
+    // Kick an immediate refresh so counts update right after voting,
+    // without waiting for the next scheduled tick.
+    silentRefreshComments();
+    refreshRemainingForTalkback(talkbackId).catch(() => {});
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CONTROLS
+// ═══════════════════════════════════════════════════════════════════════════
+function syncCount(v) {
+  const prev = parseInt(document.getElementById('countInput').value) || null;
+  v = Math.min(Config.maxVotes, Math.max(1, parseInt(v) || 1));
+  document.getElementById('slider').value     = v;
+  document.getElementById('countInput').value = v;
+  document.getElementById('countVal').textContent = v;
+  if (prev !== v) addLog('change', `Change: vote count ${prev} → ${v}`, { field: 'count', prev, next: v });
+}
+
+function setSort(key, btn) {
+  const prev = State.sort;
+  State.sort = key;
+  document.querySelectorAll('.sort-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderComments();
+  addLog('action', `Click: sort ${prev} → ${key}`, { field: 'sort', prev, next: key });
+}
+
+function onSearchInput(val) {
+  addLog('change', `Change: search = "${val}"`, { field: 'search', value: val });
+  renderComments();
+}
+
+async function manualRefresh() {
+  if (!State.connected) return;
+  addLog('action', 'Click: Refresh');
+  await loadComments();
+  if (State.selectedId) {
+    await refreshRemainingForTalkback(State.selectedId);
+  } else {
+    await refreshProxyCapacity();
+  }
+}
+
+function onArticleUrlInput(val) {
+  addLog('change', `Change: articleUrl = "${val}"`, { field: 'articleUrl', value: val });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  RECENT URLs — persisted in localStorage
+// ═══════════════════════════════════════════════════════════════════════════
+const RECENT_KEY = 'recentArticleUrls';
+const LAST_URL_KEY = 'lastArticleUrl';
+const MAX_RECENT = 10;
+
+function loadRecent() {
+  try { return JSON.parse(localStorage.getItem(RECENT_KEY)) || []; }
+  catch { return []; }
+}
+
+function saveRecent(list) {
+  localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, MAX_RECENT)));
+}
+
+function addRecent(url) {
+  if (!url) return;
+  let list = loadRecent();
+  // Remove if already exists (will re-add at front)
+  list = list.filter(u => u !== url);
+  list.unshift(url);
+  saveRecent(list);
+  localStorage.setItem(LAST_URL_KEY, url);
+  renderRecent();
+}
+
+function removeRecent(url) {
+  let list = loadRecent().filter(u => u !== url);
+  saveRecent(list);
+  renderRecent();
+}
+
+function renderRecent() {
+  const list = loadRecent();
+  const bar = document.getElementById('recentBar');
+  const el = document.getElementById('recentList');
+  if (!list.length) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  el.innerHTML = list.map(url => {
+    const id = Config.parseArticleUrl(url) || url;
+    const short = id.length > 20 ? id.slice(0, 18) + '…' : id;
+    const isActive = url === Config.articleUrl;
+    return `<span class="recent-chip${isActive ? ' active' : ''}"
+                  onclick="loadRecentUrl('${esc(url)}')"
+                  title="${esc(url)}">
+      ${esc(short)}
+      <span class="chip-x" onclick="event.stopPropagation();removeRecent('${esc(url)}')">✕</span>
+    </span>`;
+  }).join('');
+}
+
+function loadRecentUrl(url) {
+  document.getElementById('articleUrl').value = url;
+  Config.setArticleUrl(url);
+  addLog('action', `Click: recent URL → ${url}`);
+  connect();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ACTIVITY LOG
+// ═══════════════════════════════════════════════════════════════════════════
+const LOG_ICON = {
+  like: '👍', dislike: '👎', sys: '⚙', action: '👆', change: '✏',
+  http: '→', 'http-ok': '✓', 'http-err': '✗',
+};
+
+// Session id so interleaved events in the server file can be split per tab/reload.
+const SESSION_ID = (crypto.randomUUID && crypto.randomUUID()) ||
+  (Date.now().toString(36) + Math.random().toString(36).slice(2));
+
+// Server endpoint that receives every event. Always targets the server that
+// served this page (NOT Config.apiBase, which may point at Ynet). If the page
+// is opened as file:// the ship becomes a no-op.
+const LOG_SINK = (location.protocol === 'http:' || location.protocol === 'https:')
+  ? location.origin + '/client-log'
+  : null;
+
+function shipEvent(entry) {
+  if (!LOG_SINK) return;
+  try {
+    const body = JSON.stringify(entry);
+    // sendBeacon survives page unload and is fire-and-forget
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(LOG_SINK, new Blob([body], { type: 'application/json' }));
+    } else {
+      fetch(LOG_SINK, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body, keepalive: true }).catch(() => {});
+    }
+  } catch (_) { /* never break UI on logging failure */ }
+}
+
+function addLog(type, msg, details) {
+  const ts = new Date();
+  const now = ts.toLocaleTimeString('he-IL', { hour12: false }) + '.' + String(ts.getMilliseconds()).padStart(3,'0');
+  const entry = { session_id: SESSION_ID, ts: ts.toISOString(), type, msg, details };
+  State.log.unshift({ type, msg, now, details, ts: ts.toISOString() });
+  if (State.log.length > 500) State.log.pop();
+  if (details !== undefined) {
+    console.log(`[${now}] ${type}: ${msg}`, details);
+  } else {
+    console.log(`[${now}] ${type}: ${msg}`);
+  }
+  shipEvent(entry);
+  renderLog();
+}
+
+window.addEventListener('error', (e) => {
+  addLog('sys', `JS error: ${e.message}`, { filename: e.filename, lineno: e.lineno, colno: e.colno, stack: e.error && e.error.stack });
+});
+window.addEventListener('unhandledrejection', (e) => {
+  addLog('sys', `Unhandled promise rejection: ${e.reason}`, { reason: String(e.reason) });
+});
+window.addEventListener('beforeunload', () => {
+  shipEvent({ session_id: SESSION_ID, ts: new Date().toISOString(), type: 'sys', msg: 'Page unload' });
+});
+
+function renderLog() {
+  const el = document.getElementById('logBody');
+  if (!State.log.length) { el.innerHTML = '<div class="log-empty">No activity</div>'; return; }
+  el.innerHTML = State.log.map((e, i) => {
+    const icon = LOG_ICON[e.type] || '·';
+    const cls = e.type === 'like' ? 'lp-like'
+              : e.type === 'dislike' ? 'lp-dislike'
+              : e.type === 'http-err' ? 'lp-err'
+              : e.type.startsWith('http') ? 'lp-http'
+              : e.type === 'action' ? 'lp-action'
+              : e.type === 'change' ? 'lp-change'
+              : 'lp-sys';
+    const detailHtml = e.details !== undefined
+      ? `<pre class="log-d" id="log-d-${i}">${esc(JSON.stringify(e.details, null, 2))}</pre>` : '';
+    const toggle = e.details !== undefined
+      ? `<span class="log-toggle" onclick="toggleLogDetail(${i})">▸</span>` : '<span class="log-toggle-empty"></span>';
+    return `<div class="log-entry">
+      <div class="log-row">
+        ${toggle}
+        <span class="log-t">${e.now}</span>
+        <span class="log-p ${cls}">${icon}</span>
+        <span class="log-m">${esc(e.msg)}</span>
+      </div>
+      ${detailHtml}
+    </div>`;
+  }).join('');
+}
+
+function toggleLogDetail(i) {
+  const el = document.getElementById(`log-d-${i}`);
+  if (!el) return;
+  el.classList.toggle('show');
+  const row = el.previousElementSibling;
+  const arrow = row.querySelector('.log-toggle');
+  if (arrow) arrow.textContent = el.classList.contains('show') ? '▾' : '▸';
+}
+
+function clearLog() {
+  addLog('action', 'Click: Clear log');
+  State.log = [];
+  renderLog();
+}
+
+function exportLog() {
+  const blob = new Blob([JSON.stringify(State.log, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ynet_client_log_${Date.now()}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+  addLog('action', 'Click: Export log');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════════════════════════════════════════
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function avatarColor(name) {
+  const p = ['#4f8ef7','#a855f7','#06b6d4','#f59e0b','#10b981','#f43f5e','#8b5cf6'];
+  let h = 0; for (const ch of (name||'')) h = ch.charCodeAt(0) + ((h<<5)-h);
+  return p[Math.abs(h) % p.length];
+}
+
+function showError(html) {
+  document.getElementById('commentsList').innerHTML = `<div class="state-msg">${html}</div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  TABS
+// ═══════════════════════════════════════════════════════════════════════════
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.getElementById('pane-' + name).classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SCRAPING STATUS
+// ═══════════════════════════════════════════════════════════════════════════
+const ProxyState = {
+  data:       [],
+  sortKey:    'ynet_ms',
+  sortDir:    1,   // 1 = asc, -1 = desc
+  offset:     0,
+  pageSize:   200,
+  total:      0,
+};
+
+async function loadScrapingStatus() {
+  try {
+    const cap = await fetch(`${SERVER_BASE}/api/proxy_capacity`).then(r => r.json());
+    document.getElementById('ssTotal').textContent     = (cap.total_addresses || 0).toLocaleString();
+    document.getElementById('ssUniqueIPs').textContent = (cap.unique_exit_ips || 0).toLocaleString();
+    document.getElementById('ssNoIP').textContent      = (cap.unknown_exit_ip || 0).toLocaleString();
+    document.getElementById('ssSource').textContent    = cap.source || '—';
+  } catch {}
+
+  try {
+    const res = await fetch(`${SERVER_BASE}/api/proxies?offset=${ProxyState.offset}&limit=${ProxyState.pageSize}`).then(r => r.json());
+    ProxyState.total = res.total || 0;
+    ProxyState.data  = res.proxies || [];
+    renderProxyTable();
+    renderProxyPager();
+  } catch (e) {
+    document.getElementById('proxyTbody').innerHTML =
+      `<tr><td colspan="4" style="color:var(--muted);text-align:center;padding:20px">Error loading proxies: ${esc(e.message)}</td></tr>`;
+  }
+}
+
+function sortProxies(key) {
+  const ths = document.querySelectorAll('.proxy-tbl th');
+  const cols = ['scheme','addr','exit_ip','ynet_ms'];
+  if (ProxyState.sortKey === key) {
+    ProxyState.sortDir *= -1;
+  } else {
+    ProxyState.sortKey = key;
+    ProxyState.sortDir = 1;
+  }
+  ths.forEach((th, i) => {
+    th.classList.remove('sort-asc','sort-desc');
+    if (cols[i] === ProxyState.sortKey) {
+      th.classList.add(ProxyState.sortDir === 1 ? 'sort-asc' : 'sort-desc');
+    }
+  });
+  renderProxyTable();
+}
+
+function renderProxyTable() {
+  const rows = [...ProxyState.data].sort((a, b) => {
+    const k = ProxyState.sortKey;
+    const av = a[k] ?? '';
+    const bv = b[k] ?? '';
+    if (av === '' && bv !== '') return 1;
+    if (bv === '' && av !== '') return -1;
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * ProxyState.sortDir;
+    return String(av).localeCompare(String(bv)) * ProxyState.sortDir;
+  });
+
+  document.getElementById('proxyTbody').innerHTML = rows.map(p => {
+    const scheme = p.scheme || '';
+    const schemeClass = scheme === 'socks5' ? 'sb-socks5' : scheme === 'https' ? 'sb-https' : 'sb-http';
+    const ms = p.ynet_ms != null ? p.ynet_ms : '';
+    return `<tr>
+      <td><span class="scheme-badge ${schemeClass}">${esc(scheme)}</span></td>
+      <td>${esc(p.addr || '')}</td>
+      <td>${p.exit_ip ? esc(p.exit_ip) : '<span class="no-ip">—</span>'}</td>
+      <td>${ms !== '' ? ms : '<span class="no-ip">—</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+function renderProxyPager() {
+  const start = ProxyState.offset + 1;
+  const end   = Math.min(ProxyState.offset + ProxyState.pageSize, ProxyState.total);
+  document.getElementById('pageInfo').textContent = `${start}–${end} of ${ProxyState.total.toLocaleString()}`;
+  document.getElementById('btnPrevPage').disabled = ProxyState.offset === 0;
+  document.getElementById('btnNextPage').disabled = end >= ProxyState.total;
+}
+
+function proxyPage(dir) {
+  ProxyState.offset = Math.max(0, ProxyState.offset + dir * ProxyState.pageSize);
+  loadScrapingStatus();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════════════════════
+(function init() {
+  // Restore last used URL from localStorage
+  const savedUrl = localStorage.getItem(LAST_URL_KEY);
+  if (savedUrl) {
+    Config.setArticleUrl(savedUrl);
+  }
+
+  document.getElementById('articleUrl').value = Config.articleUrl;
+  renderRecent();
+  loadScrapingStatus();
+
+  addLog('sys', `Init — articleUrl=${Config.articleUrl} articleId=${Config.articleId}`,
+    { userAgent: navigator.userAgent, url: location.href, config: {
+        articleUrl: Config.articleUrl, articleId: Config.articleId, maxVotes: Config.maxVotes,
+        endpoints: Config.endpoints, apiBase: Config.apiBase } });
+
+  // Auto-connect on load
+  connect();
+
+  // No auto-refresh — user controls refresh manually via button.
+})();
+</script>
+</body>
+</html>
