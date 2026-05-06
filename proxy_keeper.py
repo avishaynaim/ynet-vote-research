@@ -40,12 +40,18 @@ MIN_SURVIVORS   = 30    # refuse to overwrite alive.json below this
 FLUSH_EVERY     = 50    # write alive.json + reload server after this many new hits
 SERVER_RELOAD   = "http://127.0.0.1:5001/admin/reload"
 
-# ── Probe target ───────────────────────────────────────────────────────────
-YNET_URL = "https://www.ynet.co.il/iphone/json/api/talkbacks/list/v2/yokra14737379/0/1"
+# ── Probe target — POST to vote endpoint with dummy payload ────────────────
+# We test the VOTE endpoint (POST), not the list (GET), because ynet may allow
+# proxy reads but block proxy votes. Any response from ynet (even 400/403) means
+# the proxy can reach the vote endpoint — that's all we need.
+VOTE_URL     = "https://www.ynet.co.il/iphone/json/api/talkbacks/vote"
+VOTE_PAYLOAD = {"article_id": "yokra14737379", "talkback_id": 0,
+                "talkback_like": True, "talkback_unlike": False, "vote_type": "2state"}
 HEADERS  = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Origin":     "https://www.ynet.co.il",
-    "Referer":    "https://www.ynet.co.il/",
+    "User-Agent":   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Origin":       "https://www.ynet.co.il",
+    "Referer":      "https://www.ynet.co.il/",
+    "Content-Type": "application/json",
 }
 
 SOURCES = [
@@ -168,12 +174,11 @@ async def probe_one(scheme, addr):
     try:
         async with aiohttp.ClientSession(connector=conn, timeout=timeout, trust_env=False) as s:
             t0 = time.time()
-            async with s.get(YNET_URL, headers=HEADERS) as r:
-                if r.status != 200:
+            async with s.post(VOTE_URL, json=VOTE_PAYLOAD, headers=HEADERS) as r:
+                # Any response from ynet (200, 400, 403, 429...) means proxy reaches vote endpoint
+                if r.status == 0:
                     return None
-                body = await r.content.read(800)
-                if not any(t in body for t in (b"rss", b"talkback", b"success", b"<?xml")):
-                    return None
+                await r.content.read(200)
                 ms = int((time.time() - t0) * 1000)
         return {"scheme": scheme, "addr": addr, "exit_ip": addr.split(":")[0], "ynet_ms": ms}
     except Exception:
