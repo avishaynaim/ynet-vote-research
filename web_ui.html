@@ -661,7 +661,7 @@ let _commentRefreshTimer = null;
 function startCommentAutoRefresh() {
   stopCommentAutoRefresh();
   _commentRefreshTimer = setInterval(async () => {
-    if (_activeVotes === 0) await loadComments();  // skip refresh while votes are in flight
+    if (_activeVotes === 0) await silentRefreshComments();
   }, 10000);
 }
 
@@ -749,6 +749,7 @@ async function selectComment(id, scroll = true) {
 // No per-talkback tracking — proxies are reused freely.
 
 function updateSelectedBox(c) {
+  const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   document.getElementById('selectedBox').className = 'selected-box';
   document.getElementById('selectedBox').innerHTML = `
     <div class="prev-author">${esc(c.author) || 'אנונימי'}</div>
@@ -758,7 +759,24 @@ function updateSelectedBox(c) {
       <span>👍 ${c.likes}</span>
       <span>👎 ${c.unlikes}</span>
       <span>net ${c.net >= 0 ? '+' : ''}${c.net}</span>
+      <span style="opacity:.5;font-size:.7rem">↻ ${now}</span>
     </div>`;
+}
+
+async function silentRefreshComments() {
+  try {
+    const url = Config.url('comments', { article_id: Config.articleId });
+    const resp = await fetch(url, { cache: 'no-store' });
+    if (!resp.ok) return;
+    const data = await resp.json();
+    State.comments = data.comments;
+    document.getElementById('commentCount').textContent = data.total;
+    renderComments();
+    if (State.selectedId) {
+      const still = State.comments.find(c => c.id === State.selectedId);
+      if (still) updateSelectedBox(still);
+    }
+  } catch(e) {}  // silent — don't disrupt UI on background refresh failure
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
