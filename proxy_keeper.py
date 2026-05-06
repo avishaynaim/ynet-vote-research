@@ -14,17 +14,15 @@ Run in background:
     python3 proxy_keeper.py > /tmp/proxy_keeper.log 2>&1 &
 """
 
-import asyncio
 import json
 import os
 import random
-import sys
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
-import aiohttp
-from aiohttp_socks import ProxyConnector
+import requests as req_lib
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 REPO   = os.path.dirname(os.path.abspath(__file__))
@@ -33,7 +31,7 @@ ALIVE  = os.path.join(REPO, "proxies", "alive.json")
 
 # ── Tuning ─────────────────────────────────────────────────────────────────
 CYCLE_MINUTES   = 30
-CONCURRENCY     = 300   # asyncio coroutines — NOT OS threads, safe under proot
+WORKERS         = 100   # thread-pool workers — stays well under proot 150-thread limit
 PROBE_TIMEOUT   = 7.0
 RESAMPLE_SIZE   = 600   # existing master entries to re-validate per cycle
 MIN_SURVIVORS   = 30    # refuse to overwrite alive.json below this
@@ -164,53 +162,53 @@ def fetch_candidates(known_addrs):
 
 
 # ══════════════════════════════════════════════════════════════════════════
-async def probe_one(scheme, addr):
-    url = f"{scheme}://{addr}"
+# Probe using requests (same library as server) so validated proxies actually
+# work for votes — aiohttp and requests behave differently with SOCKS proxies.
+
+def probe_one(scheme, addr):
+    """Returns record dict on success, None on failure."""
+    proxy_url = f"{scheme}://{addr}"
+    proxies = {"http": proxy_url, "https": proxy_url}
+    t0 = time.time()
     try:
-        conn = ProxyConnector.from_url(url, rdns=True)
-    except Exception:
-        return None
-    timeout = aiohttp.ClientTimeout(total=PROBE_TIMEOUT)
-    try:
-        async with aiohttp.ClientSession(connector=conn, timeout=timeout, trust_env=False) as s:
-            t0 = time.time()
-            async with s.post(VOTE_URL, json=VOTE_PAYLOAD, headers=HEADERS) as r:
-                # Any response from ynet (200, 400, 403, 429...) means proxy reaches vote endpoint
-                if r.status == 0:
-                    return None
-                await r.content.read(200)
-                ms = int((time.time() - t0) * 1000)
+        r = req_lib.post(VOTE_URL, json=VOTE_PAYLOAD, headers=HEADERS,
+                         proxies=proxies, timeout=PROBE_TIMEOUT)
+        ms = int((time.time() - t0) * 1000)
+        # Any HTTP response from ynet means proxy can reach the vote endpoint
         return {"scheme": scheme, "addr": addr, "exit_ip": addr.split(":")[0], "ynet_ms": ms}
     except Exception:
         return None
 
 
-async def probe_all(candidates, on_flush):
+def probe_all(candidates, on_flush):
     """
-    Probe all candidates. Calls on_flush(hits_so_far) every FLUSH_EVERY new hits
-    so the server can be reloaded with partial results immediately.
+    Probe all candidates with a thread pool (same library as server).
+    Calls on_flush(hits_so_far) every FLUSH_EVERY hits.
     """
-    sem = asyncio.Semaphore(CONCURRENCY)
     hits = []
     done = 0
     total = len(candidates)
     last_flush = 0
+    lock = __import__("threading").Lock()
 
-    async def _probe(scheme, addr):
+    def _probe(item):
         nonlocal done, last_flush
-        async with sem:
-            rec = await probe_one(scheme, addr)
-        done += 1
-        if rec:
-            hits.append(rec)
-            if len(hits) - last_flush >= FLUSH_EVERY:
-                last_flush = len(hits)
-                await asyncio.get_event_loop().run_in_executor(None, on_flush, list(hits))
-        if done % 500 == 0 or done == total:
-            log(f"  probed {done}/{total}  hits: {len(hits)}")
+        scheme, addr = item
+        rec = probe_one(scheme, addr)
+        with lock:
+            done_val = done + 1
+            done = done_val  # noqa: F821 — intentional closure mutation via nonlocal
+            if rec:
+                hits.append(rec)
+                if len(hits) - last_flush >= FLUSH_EVERY:
+                    last_flush = len(hits)
+                    on_flush(list(hits))
+            if done_val % 500 == 0 or done_val == total:
+                log(f"  probed {done_val}/{total}  hits: {len(hits)}")
 
-    tasks = [asyncio.create_task(_probe(s, a)) for s, a in candidates]
-    await asyncio.gather(*tasks, return_exceptions=True)
+    with ThreadPoolExecutor(max_workers=WORKERS) as ex:
+        list(ex.map(_probe, candidates))
+
     return hits
 
 
@@ -226,7 +224,7 @@ def flush_alive(hits):
 
 
 # ══════════════════════════════════════════════════════════════════════════
-async def run_cycle(cycle_num):
+def run_cycle(cycle_num):
     log(f"=== Cycle #{cycle_num} start ===")
 
     master = load_master()
@@ -246,10 +244,10 @@ async def run_cycle(cycle_num):
 
     all_candidates = resample_pairs + new_candidates
     random.shuffle(all_candidates)
-    log(f"Phase 2: probing {len(all_candidates)} total (concurrency={CONCURRENCY})...")
+    log(f"Phase 2: probing {len(all_candidates)} total (workers={WORKERS})...")
 
     t0 = time.time()
-    hits = await probe_all(all_candidates, flush_alive)
+    hits = probe_all(all_candidates, flush_alive)
     elapsed = time.time() - t0
     log(f"  done: {len(hits)} hits in {elapsed:.0f}s")
 
@@ -281,11 +279,11 @@ async def run_cycle(cycle_num):
 
 
 def main():
-    log(f"proxy_keeper starting  cycle={CYCLE_MINUTES}min  concurrency={CONCURRENCY}  resample={RESAMPLE_SIZE}")
+    log(f"proxy_keeper starting  cycle={CYCLE_MINUTES}min  workers={WORKERS}  resample={RESAMPLE_SIZE}")
     cycle = 1
     while True:
         try:
-            asyncio.run(run_cycle(cycle))
+            run_cycle(cycle)
         except Exception as e:
             log(f"cycle #{cycle} crashed: {e}")
         cycle += 1
