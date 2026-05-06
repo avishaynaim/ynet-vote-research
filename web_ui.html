@@ -325,12 +325,12 @@
 
     <!-- Tab bar -->
     <div class="tab-bar">
-      <button class="tab-btn active" id="tab-scraping" onclick="switchTab('scraping')">Scraping Status</button>
-      <button class="tab-btn" id="tab-comments" onclick="switchTab('comments')">Comments <span class="pill" id="commentCount">—</span></button>
+      <button class="tab-btn" id="tab-scraping" onclick="switchTab('scraping')">Scraping Status</button>
+      <button class="tab-btn active" id="tab-comments" onclick="switchTab('comments')">Comments <span class="pill" id="commentCount">—</span></button>
     </div>
 
     <!-- Scraping Status tab -->
-    <div class="tab-pane active" id="pane-scraping" style="overflow-y:auto;flex:1">
+    <div class="tab-pane" id="pane-scraping" style="overflow-y:auto;flex:1">
       <div class="scrape-wrap">
         <div class="scrape-summary" id="scrapeSummary">
           <div class="scrape-stat"><span class="sv" id="ssTotal">—</span><span class="sl">Total proxies</span></div>
@@ -362,7 +362,7 @@
     </div>
 
     <!-- Comments tab -->
-    <div class="tab-pane" id="pane-comments" style="overflow-y:auto;flex:1">
+    <div class="tab-pane active" id="pane-comments" style="overflow-y:auto;flex:1">
       <div class="comments-panel" style="padding:18px 20px">
         <div class="search-wrap">
           <input type="text" id="searchInput" placeholder="🔍  search comments…"
@@ -564,6 +564,7 @@ async function connect() {
 
   document.getElementById('articleUrl').classList.remove('error');
   document.getElementById('serverInfo').textContent = 'Loading…';
+  stopCommentAutoRefresh();
   setConnected(false);
 
   try {
@@ -578,6 +579,7 @@ async function connect() {
     document.getElementById('headerArticle').textContent = Config.articleId;
 
     await loadComments();
+    startCommentAutoRefresh();
     addRecent(Config.articleUrl);
     addLog('sys', `Connected — article ${Config.articleId}`);
 
@@ -642,14 +644,29 @@ async function loadComments() {
     State.comments = data.comments;
     document.getElementById('commentCount').textContent = data.total;
     renderComments();
-    // Re-select if one was previously selected
+    // Re-select previously selected comment, or auto-select first on initial load
     if (State.selectedId) {
       const still = State.comments.find(c => c.id === State.selectedId);
       if (still) updateSelectedBox(still);
+    } else if (State.comments.length > 0) {
+      await selectComment(State.comments[0].id);
     }
   } catch(e) {
     showError(`Failed to load comments: ${e.message}`);
   }
+}
+
+let _commentRefreshTimer = null;
+
+function startCommentAutoRefresh() {
+  stopCommentAutoRefresh();
+  _commentRefreshTimer = setInterval(async () => {
+    if (_activeVotes === 0) await loadComments();  // skip refresh while votes are in flight
+  }, 10000);
+}
+
+function stopCommentAutoRefresh() {
+  if (_commentRefreshTimer) { clearInterval(_commentRefreshTimer); _commentRefreshTimer = null; }
 }
 
 function sorted(list) {
