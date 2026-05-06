@@ -6,7 +6,7 @@
   "proxies_file": "proxies/alive.json",
   "cache_ttl_seconds": 87,
   "max_batch_votes": 999999,
-  "proxy_timeout": 10,
+  "proxy_timeout": 5,
   "proxy_workers": 80,
   "vote_jitter_min_s": 0.0,
   "vote_jitter_max_s": 0.0,
