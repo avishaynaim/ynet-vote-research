@@ -614,19 +614,17 @@ async function refreshProxyCapacity() {
     const total   = d.total_addresses   || 0;
     const unique  = d.unique_exit_ips   || total;
 
-    // Cap UI inputs to live pool size
+    // Max scales with pool: each proxy is reusable, so allow 20× pool size.
+    // More proxies found by keeper → higher ceiling automatically.
+    const newMax = Math.max(total * 20, 100);
     const slider = document.getElementById('slider');
     const numInput = document.getElementById('countInput');
-    if (slider)   slider.max   = total;
-    if (numInput) numInput.max = total;
-    Config.maxVotes = total;
-
-    // Clamp current value if it now exceeds the pool
-    const cur = parseInt(document.getElementById('countVal').textContent) || 1;
-    if (cur > total) syncCount(total);
+    if (slider)   slider.max   = newMax;
+    if (numInput) numInput.max = newMax;
+    Config.maxVotes = newMax;
 
     const hint = document.getElementById('capacityHint');
-    if (hint) hint.textContent = `· ${total} proxies, ${unique} unique IPs`;
+    if (hint) hint.textContent = `· ${total} proxies, ${unique} unique IPs (max ${newMax.toLocaleString()} votes)`;
     addLog('sys', `Proxy pool: ${total} proxies (${unique} unique IPs)`);
   } catch (e) {}
 }
