@@ -468,6 +468,8 @@ const State = {
 //  Every request is logged (console group + activity log entry).
 // ═══════════════════════════════════════════════════════════════════════════
 let _reqSeq = 0;
+let _voteSeq = 0;        // increments each vote; only the latest owns the progress bar
+let _activeVotes = 0;    // count of in-flight vote streams
 
 async function loggedFetch(url, opts = {}) {
   const id      = ++_reqSeq;
@@ -744,30 +746,39 @@ function updateSelectedBox(c) {
 // ═══════════════════════════════════════════════════════════════════════════
 async function vote(like) {
   if (!State.selectedId) return;
-  const count = parseInt(document.getElementById('countInput').value) || 10;
-  const c     = State.comments.find(x => x.id === State.selectedId);
-  addLog('action', `Click: ${like ? '👍 Like' : '👎 Dislike'} ×${count} on #${State.selectedId}`,
-    { action: like ? 'like' : 'dislike', count, talkback_id: State.selectedId, articleId: Config.articleId });
+  const count      = parseInt(document.getElementById('countInput').value) || 10;
+  const c          = State.comments.find(x => x.id === State.selectedId);
+  const talkbackId = State.selectedId;
+  const mySeq      = ++_voteSeq;   // this vote's unique ID
+  _activeVotes++;
 
-  // Lock UI
+  addLog('action', `Click: ${like ? '👍 Like' : '👎 Dislike'} ×${count} on #${talkbackId}`,
+    { action: like ? 'like' : 'dislike', count, talkback_id: talkbackId, articleId: Config.articleId });
+
+  // Lock buttons while ANY vote is in flight
   document.getElementById('btnLike').disabled    = true;
   document.getElementById('btnDislike').disabled = true;
   document.getElementById('resultBox').classList.remove('show');
 
-  // Progress
+  // Only the latest vote owns the progress bar
+  const iOwn = () => mySeq === _voteSeq;
+
   const pw = document.getElementById('progressWrap');
   const pb = document.getElementById('progressBar');
   const pl = document.getElementById('progressLabel');
-  pw.classList.add('active');
-  pb.style.width = '0%'; pb.style.background = 'var(--accent)';
-  pl.textContent = `Starting ${count} ${like ? 'likes' : 'dislikes'}…`;
+
+  if (iOwn()) {
+    pw.classList.add('active');
+    pb.style.width = '0%'; pb.style.background = 'var(--accent)';
+    pl.textContent = `[#${talkbackId}] Starting ${count} ${like ? 'likes' : 'dislikes'}…`;
+  }
 
   try {
     const resp = await fetch(Config.url('voteBatch'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        article_id: Config.articleId, talkback_id: State.selectedId, count, like,
+        article_id: Config.articleId, talkback_id: talkbackId, count, like,
       }),
     });
 
@@ -776,7 +787,7 @@ async function vote(like) {
       throw new Error(`HTTP ${resp.status}: ${errBody}`);
     }
 
-    // Read SSE stream for live progress
+    // Read SSE stream — only update bar if we still own it
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -794,10 +805,10 @@ async function vote(like) {
           try {
             const d = JSON.parse(line.slice(6));
             last = d;
-            if (d.t === 'p') {
+            if (d.t === 'p' && iOwn()) {
               const pct = Math.round((d.s / d.n) * 100);
               pb.style.width = pct + '%';
-              pl.textContent = `${d.o} accepted · ${d.e} errors · ${d.s}/${d.n} sent`;
+              pl.textContent = `[#${talkbackId}] ${d.o} ok · ${d.e} err · ${d.s}/${d.n}`;
             }
           } catch {}
         }
@@ -805,38 +816,49 @@ async function vote(like) {
     }
 
     // Done
-    pb.style.width = '100%';
     if (last && last.t === 'done') {
-      pb.style.background = last.o > 0 ? 'var(--like)' : 'var(--dislike)';
-      pl.textContent = `Done — ${last.o} accepted, ${last.e} errors`;
-      document.getElementById('rCount').textContent    = last.s;
-      document.getElementById('rAccepted').textContent = last.o;
-      document.getElementById('rDropped').textContent  = last.e;
-      document.getElementById('rRemaining').textContent = `${last.pool_size} proxies (reusable)`;
-      document.getElementById('rBefore').textContent   = `👍 ${c?.likes||0}  👎 ${c?.unlikes||0}`;
-      document.getElementById('rAfter').textContent    = 'Press Refresh to check';
-      document.getElementById('rLift').innerHTML =
-        `<span class="lift-badge">${last.o} accepted (Refresh to see counts)</span>`;
-      document.getElementById('resultBox').classList.add('show');
       addLog(like ? 'like' : 'dislike',
-        `${c?.author || '#'+State.selectedId} — ${last.o}/${last.s} accepted`);
+        `#${talkbackId} — ${last.o}/${last.s} accepted`);
+      if (iOwn()) {
+        pb.style.width = '100%';
+        pb.style.background = last.o > 0 ? 'var(--like)' : 'var(--dislike)';
+        pl.textContent = `[#${talkbackId}] Done — ${last.o} accepted, ${last.e} errors`;
+        document.getElementById('rCount').textContent     = last.s;
+        document.getElementById('rAccepted').textContent  = last.o;
+        document.getElementById('rDropped').textContent   = last.e;
+        document.getElementById('rRemaining').textContent = `${last.pool_size} proxies`;
+        document.getElementById('rBefore').textContent    = `👍 ${c?.likes||0}  👎 ${c?.unlikes||0}`;
+        document.getElementById('rAfter').textContent     = 'Press Refresh to check';
+        document.getElementById('rLift').innerHTML =
+          `<span class="lift-badge">${last.o} accepted</span>`;
+        document.getElementById('resultBox').classList.add('show');
+      }
     }
 
   } catch(e) {
-    pb.style.background = 'var(--dislike)';
-    pb.style.width = '100%';
-    pl.textContent = `Error: ${e.message}`;
-    addLog('sys', `Vote failed: ${e.message}`);
+    if (iOwn()) {
+      pb.style.background = 'var(--dislike)';
+      pb.style.width = '100%';
+      pl.textContent = `Error: ${e.message}`;
+    }
+    addLog('sys', `Vote #${talkbackId} failed: ${e.message}`);
   }
 
-  setTimeout(() => {
-    pw.classList.remove('active');
-    pb.style.width = '0%'; pb.style.background = 'var(--accent)';
-    if (State.selectedId) {
-      document.getElementById('btnLike').disabled    = false;
-      document.getElementById('btnDislike').disabled = false;
-    }
-  }, 2500);
+  _activeVotes--;
+
+  // Re-enable buttons only when ALL votes finished
+  if (_activeVotes === 0) {
+    setTimeout(() => {
+      if (_activeVotes === 0) {   // still zero after delay
+        pw.classList.remove('active');
+        pb.style.width = '0%'; pb.style.background = 'var(--accent)';
+        if (State.selectedId) {
+          document.getElementById('btnLike').disabled    = false;
+          document.getElementById('btnDislike').disabled = false;
+        }
+      }
+    }, 2500);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
