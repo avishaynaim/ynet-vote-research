@@ -649,7 +649,7 @@ async function loadComments() {
       const still = State.comments.find(c => c.id === State.selectedId);
       if (still) updateSelectedBox(still);
     } else if (State.comments.length > 0) {
-      await selectComment(State.comments[0].id);
+      await selectComment(State.comments[0].id, false);  // no scroll on auto-select
     }
   } catch(e) {
     showError(`Failed to load comments: ${e.message}`);
@@ -728,15 +728,18 @@ function renderComments() {
   }).join('');
 }
 
-async function selectComment(id) {
+async function selectComment(id, scroll = true) {
   State.selectedId = id;
   const c = State.comments.find(x => x.id === id);
   if (!c) return;
-  addLog('action', `Click: select comment #${id} — ${c.author || 'אנונימי'}`,
+  if (scroll) addLog('action', `Click: select comment #${id} — ${c.author || 'אנונימי'}`,
     { id, author: c.author, text: c.text, likes: c.likes, unlikes: c.unlikes });
   document.querySelectorAll('.comment-card').forEach(el => el.classList.remove('selected'));
   const card = document.getElementById(`card-${id}`);
-  if (card) { card.classList.add('selected'); card.scrollIntoView({block:'nearest',behavior:'smooth'}); }
+  if (card) {
+    card.classList.add('selected');
+    if (scroll) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
   updateSelectedBox(c);
   document.getElementById('btnLike').disabled    = false;
   document.getElementById('btnDislike').disabled = false;
