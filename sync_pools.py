@@ -28,8 +28,8 @@ import argparse
 import glob
 import json
 import os
+import socket
 import subprocess
-import sys
 import urllib.request
 from datetime import datetime
 
@@ -139,9 +139,12 @@ def git_push(mine_file):
 
 
 def main():
+    hostname = socket.gethostname().replace(" ", "_").replace("/", "_")
+    default_mine = f"pool_{hostname}"
+
     ap = argparse.ArgumentParser(description="Merge proxy pools and sync to GitHub")
-    ap.add_argument("--mine",    default="pool_main",
-                    help="Base name of this machine's pool file (default: pool_main)")
+    ap.add_argument("--mine", default=default_mine,
+                    help=f"Base name of this machine's pool file (default: pool_<hostname> = {default_mine!r})")
     ap.add_argument("--no-push", action="store_true",
                     help="Merge only, do not git push")
     args = ap.parse_args()
