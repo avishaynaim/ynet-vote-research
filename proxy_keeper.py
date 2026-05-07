@@ -57,10 +57,18 @@ SERVER_USED_PROXIES   = "http://127.0.0.1:5001/api/used_proxies"
 DEFAULT_ARTICLE       = "yokra14737379"
 
 SOURCES = [
-    # ── TheSpeedX (huge, updated frequently) ──────────────────────────────
+    # ── TheSpeedX PROXY-List (huge, updated frequently) ───────────────────
     ("http",   "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt"),
     ("socks4", "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt"),
     ("socks5", "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt"),
+    # ── TheSpeedX SOCKS-List (separate repo, different IP pool ~8k) ───────
+    ("http",   "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt"),
+    # ── proxyspace.pro direct (fresher than GitHub mirror) ────────────────
+    ("http",   "https://proxyspace.pro/http.txt"),
+    ("socks4", "https://proxyspace.pro/socks4.txt"),
+    ("socks5", "https://proxyspace.pro/socks5.txt"),
     # ── monosans ──────────────────────────────────────────────────────────
     ("http",   "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt"),
     ("socks4", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks4.txt"),
@@ -314,11 +322,21 @@ def fetch_candidates(known_addrs):
             pass
 
     for proto in ("http", "socks4", "socks5"):
+        # Standard bulk fetch
         try:
             url = (f"https://api.proxyscrape.com/v3/free-proxy-list/get"
                    f"?request=displayproxies&protocol={proto}"
                    f"&timeout=20000&country=all&proxy_format=ipport&format=text")
             body = _http_get(url, 30)
+            candidates.extend(_parse_lines(proto, body))
+        except Exception:
+            pass
+        # Elite + fast subset (more likely to bypass Ynet detection)
+        try:
+            url = (f"https://api.proxyscrape.com/v2/"
+                   f"?request=getproxies&protocol={proto}"
+                   f"&timeout=1000&country=all&ssl=all&anonymity=elite")
+            body = _http_get(url, 15)
             candidates.extend(_parse_lines(proto, body))
         except Exception:
             pass

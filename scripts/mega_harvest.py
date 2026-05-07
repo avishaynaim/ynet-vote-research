@@ -58,10 +58,14 @@ UA_FETCH = {"User-Agent": "Mozilla/5.0 (compatible; proxy-harvest/3.0)"}
 # ═══════════════════════════════════════════════════════════════════════════
 # (name, scheme_hint, url)
 GITHUB_SOURCES = [
-    # ── TheSpeedX (updates every 10 min) ──
+    # ── TheSpeedX PROXY-List (updates every 10 min) ──
     ("speedx_http",    "http",   "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt"),
     ("speedx_s4",      "socks4", "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt"),
     ("speedx_s5",      "socks5", "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt"),
+    # ── TheSpeedX SOCKS-List (separate repo, different IP pool ~8k) ──
+    ("speedx_sockslist_http", "http",   "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt"),
+    ("speedx_sockslist_s4",   "socks4", "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks4.txt"),
+    ("speedx_sockslist_s5",   "socks5", "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt"),
     # ── monosans (hourly) ──
     ("monosans_http",  "http",   "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt"),
     ("monosans_s4",    "socks4", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks4.txt"),
@@ -297,6 +301,7 @@ def fetch_github_source(name, scheme, url):
 def fetch_proxyscrape_api():
     out = []
     for proto in ("http", "socks4", "socks5"):
+        # Standard bulk fetch (all proxies, broad timeout)
         for version in ("v2", "v3"):
             try:
                 if version == "v3":
@@ -311,6 +316,28 @@ def fetch_proxyscrape_api():
                 out.extend(parse_lines(proto, body))
             except Exception:
                 pass
+        # High-quality subset: fast (timeout≤1000ms) + elite anonymity only
+        # These are less likely to be detected/blocked by Ynet
+        try:
+            url = (f"https://api.proxyscrape.com/v2/"
+                   f"?request=getproxies&protocol={proto}"
+                   f"&timeout=1000&country=all&ssl=all&anonymity=elite")
+            body = http_get(url, 15)
+            out.extend(parse_lines(proto, body))
+        except Exception:
+            pass
+    return out
+
+
+def fetch_proxyspace_direct():
+    """proxyspace.pro direct URLs — different/fresher content than GitHub mirror."""
+    out = []
+    for scheme, path in [("http", "http.txt"), ("socks4", "socks4.txt"), ("socks5", "socks5.txt")]:
+        try:
+            body = http_get(f"https://proxyspace.pro/{path}", 20)
+            out.extend(parse_lines(scheme, body))
+        except Exception:
+            pass
     return out
 
 
@@ -544,6 +571,7 @@ def gather_all():
             ex.submit(fetch_proxydb):               "proxydb.net",
             ex.submit(fetch_proxyscan):             "proxyscan.io",
             ex.submit(fetch_freeproxyworld):        "freeproxy.world",
+            ex.submit(fetch_proxyspace_direct):     "proxyspace.pro",
         }
 
         for fut in as_completed(gh_futs):
