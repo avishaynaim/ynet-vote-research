@@ -760,7 +760,16 @@ def main():
                     help="Just fetch and count candidates, don't probe")
     ap.add_argument("--target", type=int, default=10000,
                     help="Stop when master pool reaches this size")
+    ap.add_argument("--output", default=None,
+                    help="Write results to this file instead of proxies/master_pool.json"
+                         " (useful on remote machines: --output proxies/pool_remote.json)")
     args = ap.parse_args()
+
+    global MASTER
+    if args.output:
+        MASTER = os.path.abspath(args.output)
+        os.makedirs(os.path.dirname(MASTER), exist_ok=True)
+        log(f"Output file: {MASTER}")
 
     def sighandler(*_):
         global STOP

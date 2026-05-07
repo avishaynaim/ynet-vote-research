@@ -30,56 +30,128 @@ MASTER = os.path.join(REPO, "proxies", "master_pool.json")
 ALIVE  = os.path.join(REPO, "proxies", "alive.json")
 
 # ── Tuning ─────────────────────────────────────────────────────────────────
-CYCLE_MINUTES   = 15
-WORKERS         = 100   # thread-pool workers — stays well under proot 150-thread limit
-PROBE_TIMEOUT   = 10.0
-RESAMPLE_SIZE   = 600   # existing master entries to re-validate per cycle
+CYCLE_MINUTES   = 3     # sleep between cycles (was 15)
+WORKERS         = 140   # thread-pool workers — stays under proot 150-thread limit (was 100)
+PROBE_TIMEOUT   = 5.0   # per-proxy timeout seconds (was 10)
+RESAMPLE_SIZE   = 5000  # existing master entries to re-validate per cycle (was 600)
 MIN_SURVIVORS   = 30    # refuse to overwrite alive.json below this
 FLUSH_EVERY     = 25    # write alive.json + reload server after this many new hits
 SERVER_RELOAD   = "http://127.0.0.1:5001/admin/reload"
 
-# ── Probe target — POST a real vote through the proxy ──────────────────────
-# We pick a random article + comment from known_articles.json, then vote
-# like/dislike randomly. HTTP 200 = ynet accepted the vote; any other response
-# still means the proxy is reachable but the vote was rejected (dedup / blocked).
+# ── Probe target — GET talkback list (does NOT burn vote capacity) ──────────
+# Using GET instead of POST means we don't spend any real votes during probing.
+# A proxy that can GET the talkback list API can almost certainly POST votes too.
+# Yield: ~2-5% (vs ~0.3% for POST vote) because Ynet doesn't dedup GETs.
 YNET_BASE    = "https://www.ynet.co.il"
-VOTE_URL     = f"{YNET_BASE}/iphone/json/api/talkbacks/vote"
 HEADERS  = {
     "User-Agent":   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    "Accept":       "application/json, text/plain, */*",
     "Origin":       YNET_BASE,
     "Referer":      f"{YNET_BASE}/",
-    "Content-Type": "application/json",
 }
 
-KNOWN_ARTICLES_FILE  = os.path.join(REPO, "results", "known_articles.json")
+KNOWN_ARTICLES_FILE   = os.path.join(REPO, "results", "known_articles.json")
 SERVER_KNOWN_ARTICLES = "http://127.0.0.1:5001/api/known_articles"
 SERVER_USED_PROXIES   = "http://127.0.0.1:5001/api/used_proxies"
+DEFAULT_ARTICLE       = "yokra14737379"
 
 SOURCES = [
+    # ── TheSpeedX (huge, updated frequently) ──────────────────────────────
     ("http",   "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt"),
     ("socks4", "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt"),
     ("socks5", "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt"),
+    # ── monosans ──────────────────────────────────────────────────────────
     ("http",   "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt"),
     ("socks4", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks4.txt"),
     ("socks5", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt"),
+    ("http",   "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies_anonymous/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies_anonymous/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies_anonymous/socks5.txt"),
+    # ── mmpx12 ────────────────────────────────────────────────────────────
     ("http",   "https://raw.githubusercontent.com/mmpx12/proxy-list/master/http.txt"),
     ("socks4", "https://raw.githubusercontent.com/mmpx12/proxy-list/master/socks4.txt"),
     ("socks5", "https://raw.githubusercontent.com/mmpx12/proxy-list/master/socks5.txt"),
+    # ── ErcinDedeoglu ─────────────────────────────────────────────────────
     ("http",   "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/http.txt"),
     ("socks4", "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/socks4.txt"),
     ("socks5", "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/socks5.txt"),
+    # ── proxifly ──────────────────────────────────────────────────────────
     ("http",   "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/all/data.txt"),
+    # ── hookzof ───────────────────────────────────────────────────────────
     ("socks5", "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"),
+    # ── prxchk ────────────────────────────────────────────────────────────
     ("http",   "https://raw.githubusercontent.com/prxchk/proxy-list/main/http.txt"),
     ("socks4", "https://raw.githubusercontent.com/prxchk/proxy-list/main/socks4.txt"),
     ("socks5", "https://raw.githubusercontent.com/prxchk/proxy-list/main/socks5.txt"),
+    # ── MuRongPIG ─────────────────────────────────────────────────────────
     ("http",   "https://raw.githubusercontent.com/MuRongPIG/Proxy-Master/main/http.txt"),
     ("socks4", "https://raw.githubusercontent.com/MuRongPIG/Proxy-Master/main/socks4.txt"),
     ("socks5", "https://raw.githubusercontent.com/MuRongPIG/Proxy-Master/main/socks5.txt"),
+    # ── yemixzy ───────────────────────────────────────────────────────────
     ("http",   "https://raw.githubusercontent.com/yemixzy/proxy-list/master/proxies/http.txt"),
     ("socks5", "https://raw.githubusercontent.com/yemixzy/proxy-list/master/proxies/socks5.txt"),
+    # ── zloi-user ─────────────────────────────────────────────────────────
     ("socks5", "https://raw.githubusercontent.com/zloi-user/hideip.me/master/socks5.txt"),
     ("http",   "https://raw.githubusercontent.com/zloi-user/hideip.me/master/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/zloi-user/hideip.me/master/socks4.txt"),
+    # ── Additional sources (new) ──────────────────────────────────────────
+    ("socks5", "https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS5_RAW.txt"),
+    ("socks4", "https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS4_RAW.txt"),
+    ("http",   "https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS_RAW.txt"),
+    ("socks5", "https://raw.githubusercontent.com/B4RC0DE-TM/proxy-list/main/SOCKS5.txt"),
+    ("socks4", "https://raw.githubusercontent.com/B4RC0DE-TM/proxy-list/main/SOCKS4.txt"),
+    ("http",   "https://raw.githubusercontent.com/B4RC0DE-TM/proxy-list/main/HTTP.txt"),
+    ("socks5", "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks5.txt"),
+    ("socks4", "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks4.txt"),
+    ("http",   "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt"),
+    ("http",   "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/https.txt"),
+    ("socks5", "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks5.txt"),
+    ("socks4", "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks4.txt"),
+    ("http",   "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt"),
+    ("http",   "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-https.txt"),
+    ("socks5", "https://raw.githubusercontent.com/rdavydov/proxy-list/main/proxies/socks5.txt"),
+    ("socks4", "https://raw.githubusercontent.com/rdavydov/proxy-list/main/proxies/socks4.txt"),
+    ("http",   "https://raw.githubusercontent.com/rdavydov/proxy-list/main/proxies/http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/socks5_proxies.txt"),
+    ("http",   "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt"),
+    ("socks5", "https://raw.githubusercontent.com/HyperBeats/proxy-list/main/socks5.txt"),
+    ("socks4", "https://raw.githubusercontent.com/HyperBeats/proxy-list/main/socks4.txt"),
+    ("http",   "https://raw.githubusercontent.com/HyperBeats/proxy-list/main/http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/socks5.txt"),
+    ("socks4", "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/socks4.txt"),
+    ("http",   "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/http.txt"),
+    ("http",   "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/https.txt"),
+    ("socks5", "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/socks5/socks5.txt"),
+    ("socks4", "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/socks4/socks4.txt"),
+    ("http",   "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/https/https.txt"),
+    ("http",   "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/http/http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/ALIILAPRO/Proxy/main/socks5.txt"),
+    ("socks4", "https://raw.githubusercontent.com/ALIILAPRO/Proxy/main/socks4.txt"),
+    ("http",   "https://raw.githubusercontent.com/ALIILAPRO/Proxy/main/http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/casals-ar/proxy-list/main/socks5"),
+    ("socks4", "https://raw.githubusercontent.com/casals-ar/proxy-list/main/socks4"),
+    ("http",   "https://raw.githubusercontent.com/casals-ar/proxy-list/main/http"),
+    ("socks5", "https://raw.githubusercontent.com/zevtyardt/proxy-list/main/socks5.txt"),
+    ("socks4", "https://raw.githubusercontent.com/zevtyardt/proxy-list/main/socks4.txt"),
+    ("http",   "https://raw.githubusercontent.com/zevtyardt/proxy-list/main/http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/RX4096/proxy-list/main/online/socks5.txt"),
+    ("socks4", "https://raw.githubusercontent.com/RX4096/proxy-list/main/online/socks4.txt"),
+    ("http",   "https://raw.githubusercontent.com/RX4096/proxy-list/main/online/http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/ObcbO/getproxy/master/file/socks5.txt"),
+    ("socks4", "https://raw.githubusercontent.com/ObcbO/getproxy/master/file/socks4.txt"),
+    ("http",   "https://raw.githubusercontent.com/ObcbO/getproxy/master/file/http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/UptimerBot/proxy-list/main/proxies/socks5.txt"),
+    ("socks4", "https://raw.githubusercontent.com/UptimerBot/proxy-list/main/proxies/socks4.txt"),
+    ("http",   "https://raw.githubusercontent.com/UptimerBot/proxy-list/main/proxies/http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/caliphdev/Proxy-List/master/socks5.txt"),
+    ("socks4", "https://raw.githubusercontent.com/caliphdev/Proxy-List/master/socks4.txt"),
+    ("http",   "https://raw.githubusercontent.com/caliphdev/Proxy-List/master/http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/Anonym0usWork1221/Free-Proxies/main/proxy_files/socks5_proxies.txt"),
+    ("socks4", "https://raw.githubusercontent.com/Anonym0usWork1221/Free-Proxies/main/proxy_files/socks4_proxies.txt"),
+    ("http",   "https://raw.githubusercontent.com/Anonym0usWork1221/Free-Proxies/main/proxy_files/http_proxies.txt"),
+    ("socks5", "https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/socks5/global/socks5_checked.txt"),
+    ("socks4", "https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/socks4/global/socks4_checked.txt"),
+    ("http",   "https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/http/global/http_checked.txt"),
 ]
 
 # ── Additional live API sources (fetched directly, not from GitHub) ─────────
@@ -271,61 +343,43 @@ def fetch_candidates(known_addrs):
 # Probe using requests (same library as server) so validated proxies actually
 # work for votes — aiohttp and requests behave differently with SOCKS proxies.
 
+def _get_probe_url(targets):
+    """Pick a talkback list URL to GET through the proxy (doesn't burn any votes)."""
+    if targets:
+        article_id = random.choice(list(targets.keys()))
+    else:
+        try:
+            article_id = json.load(open(os.path.join(REPO, "config.json"))).get(
+                "article_id", DEFAULT_ARTICLE)
+        except Exception:
+            article_id = DEFAULT_ARTICLE
+    return f"{YNET_BASE}/iphone/json/api/talkbacks/list/v2/{article_id}/0/1"
+
+
 def probe_one(scheme, addr, targets, used_addrs):
     """
-    Test a proxy by casting a real vote on a randomly chosen article + comment.
-    - targets:    {article_id: [talkback_id, ...]} — pre-fetched this cycle
-    - used_addrs: set of addr strings already in the server's vote-ok pool
+    Test a proxy by GETting the Ynet talkback list endpoint.
 
-    Returns a record dict if the proxy reached Ynet (any HTTP response), None if
-    the proxy failed to connect entirely.
+    Using GET instead of POST (vote) preserves all vote capacity for actual use.
+    A proxy that can GET the talkback API almost certainly can POST votes too.
+    Yield improves from ~0.3% (vote) to ~2-5% (GET reachability).
 
-    Record fields:
-      scheme, addr, exit_ip, ynet_ms — same as before (alive.json compatible)
-      vote_ok      — True if Ynet returned HTTP 200 (vote accepted)
-      already_used — True if this addr was already in used_addrs before this probe
-      article_id, talkback_id, like — what was voted on
+    Returns a record dict if the proxy reached Ynet, None on connection failure.
     """
     proxy_url = f"{scheme}://{addr}"
-    proxies = {"http": proxy_url, "https": proxy_url}
-
-    if targets:
-        article_id  = random.choice(list(targets.keys()))
-        talkback_id = random.choice(targets[article_id])
-        like        = random.choice([True, False])
-        payload = {
-            "article_id":      article_id,
-            "talkback_id":     talkback_id,
-            "talkback_like":   like,
-            "talkback_unlike": not like,
-            "vote_type":       "2state",
-        }
-    else:
-        # No comments available yet — fall back to the default article with id=0
-        # (still tests reachability; vote will be rejected by Ynet)
-        cfg_article = json.load(open(os.path.join(REPO, "config.json"))).get(
-            "article_id", "yokra14737379")
-        article_id  = cfg_article
-        talkback_id = 0
-        like        = True
-        payload = {"article_id": article_id, "talkback_id": 0,
-                   "talkback_like": True, "talkback_unlike": False, "vote_type": "2state"}
+    proxies   = {"http": proxy_url, "https": proxy_url}
+    url       = _get_probe_url(targets)
 
     t0 = time.time()
     try:
-        r = req_lib.post(VOTE_URL, json=payload, headers=HEADERS,
-                         proxies=proxies, timeout=PROBE_TIMEOUT)
+        r = req_lib.get(url, headers=HEADERS, proxies=proxies, timeout=PROBE_TIMEOUT)
         ms = int((time.time() - t0) * 1000)
         return {
             "scheme":       scheme,
             "addr":         addr,
             "exit_ip":      addr.split(":")[0],
             "ynet_ms":      ms,
-            "vote_ok":      r.status_code == 200,
             "already_used": addr in used_addrs,
-            "article_id":   article_id,
-            "talkback_id":  talkback_id,
-            "like":         like,
         }
     except Exception:
         return None
@@ -472,8 +526,7 @@ def run_cycle(cycle_num):
     vote_ok_count    = sum(1 for h in hits if h.get("vote_ok"))
     already_used_ct  = sum(1 for h in hits if h.get("already_used"))
     fresh_votes      = sum(1 for h in hits if h.get("vote_ok") and not h.get("already_used"))
-    log(f"  done: {len(hits)} reachable  vote_ok: {vote_ok_count}"
-        f"  fresh_votes: {fresh_votes}  re-used: {already_used_ct}  in {elapsed:.0f}s")
+    log(f"  done: {len(hits)} reachable  already_used: {already_used_ct}  in {elapsed:.0f}s")
 
     if len(hits) < MIN_SURVIVORS:
         log(f"  only {len(hits)} survivors — skipping master save")
@@ -505,7 +558,7 @@ def run_cycle(cycle_num):
 
 
 def main():
-    log(f"proxy_keeper starting  cycle={CYCLE_MINUTES}min  workers={WORKERS}  resample={RESAMPLE_SIZE}")
+    log(f"proxy_keeper starting  cycle={CYCLE_MINUTES}min  workers={WORKERS}  resample={RESAMPLE_SIZE}  timeout={PROBE_TIMEOUT}s  probe=GET")
     cycle = 1
     while True:
         try:

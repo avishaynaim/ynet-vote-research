@@ -5,3 +5,4 @@ results/
 scripts/discovery/sources/
 scripts/__pycache__/
 proxies/alive.json
+proxies/master_pool.json
