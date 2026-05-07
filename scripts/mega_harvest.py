@@ -426,6 +426,10 @@ def fetch_freeproxylist_scrape():
         ("http",   "https://www.us-proxy.org/"),
         ("http",   "https://free-proxy-list.net/anonymous-proxy.html"),
         ("socks5", "https://www.socks-proxy.net/"),
+        # /en/ variant — 300 proxies per page, different pool
+        ("http",   "https://free-proxy-list.net/en/"),
+        ("http",   "https://free-proxy-list.net/en/?page=2"),
+        ("http",   "https://free-proxy-list.net/en/?page=3"),
     ]
     for scheme, url in urls:
         try:

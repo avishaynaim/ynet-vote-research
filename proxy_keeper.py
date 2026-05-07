@@ -383,6 +383,25 @@ def fetch_candidates(known_addrs):
     except Exception:
         pass
 
+    # free-proxy-list.net /en/ — HTML table, 300 per page, different pool
+    for url in [
+        "https://free-proxy-list.net/en/",
+        "https://free-proxy-list.net/en/?page=2",
+        "https://free-proxy-list.net/en/?page=3",
+        "https://free-proxy-list.net/anonymous-proxy.html",
+    ]:
+        try:
+            body = _http_get(url, 15)
+            import re as _re
+            pairs = _re.findall(
+                r"<td>\s*(\d{1,3}(?:\.\d{1,3}){3})\s*</td>\s*<td>\s*(\d{2,5})\s*</td>",
+                body)
+            for ip, port in pairs:
+                candidates.append(("http", f"{ip}:{port}"))
+        except Exception:
+            pass
+    log(f"  free-proxy-list.net/en/: scraped")
+
     seen = set(known_addrs)
     fresh = []
     for s, a in candidates:
