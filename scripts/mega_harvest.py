@@ -19,6 +19,7 @@ Usage:
 
 import argparse
 import asyncio
+import glob
 import json
 import os
 import random
@@ -601,9 +602,28 @@ def save_master(proxies):
 
 
 def known_sets(master):
-    """Return (known_addrs, known_ips) from master pool."""
+    """Return (known_addrs, known_ips) from ALL pool_*.json files on disk.
+
+    Reads every pool_*.json in the proxies/ directory so that machines don't
+    re-probe addresses already discovered by other machines after a git pull.
+    The local master pool is included automatically since it's a pool_*.json file.
+    """
     addrs = {p["addr"] for p in master if p.get("addr")}
-    ips = {p["exit_ip"] for p in master if p.get("exit_ip")}
+    ips   = {p["exit_ip"] for p in master if p.get("exit_ip")}
+
+    proxies_dir = os.path.join(REPO, "proxies")
+    for fpath in glob.glob(os.path.join(proxies_dir, "pool_*.json")):
+        if os.path.abspath(fpath) == os.path.abspath(MASTER):
+            continue  # already counted above
+        try:
+            for p in json.load(open(fpath)):
+                if p.get("addr"):
+                    addrs.add(p["addr"])
+                if p.get("exit_ip"):
+                    ips.add(p["exit_ip"])
+        except Exception:
+            pass
+
     return addrs, ips
 
 
@@ -809,7 +829,7 @@ def main():
         # Load master
         master = load_master()
         known_addrs, known_ips = known_sets(master)
-        log(f"Master pool: {len(master)} proxies, {len(known_ips)} unique exit IPs")
+        log(f"Own pool: {len(master)} proxies | known across all machines: {len(known_addrs)} addrs")
 
         if args.target > 0 and len(master) >= args.target:
             log(f"TARGET REACHED: {len(master)} >= {args.target}")
