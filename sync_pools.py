@@ -30,6 +30,7 @@ import json
 import os
 import socket
 import subprocess
+import time
 import urllib.request
 from datetime import datetime
 
@@ -147,26 +148,36 @@ def main():
                     help=f"Base name of this machine's pool file (default: pool_<hostname> = {default_mine!r})")
     ap.add_argument("--no-push", action="store_true",
                     help="Merge only, do not git push")
+    ap.add_argument("--pull-only", action="store_true",
+                    help="Pull + merge + reload server, but do NOT push (server mode)")
+    ap.add_argument("--loop", action="store_true",
+                    help="Run repeatedly on an interval (use with --interval)")
+    ap.add_argument("--interval", type=int, default=900,
+                    help="Seconds between sync runs when --loop is set (default 900 = 15 min)")
     args = ap.parse_args()
 
-    log(f"=== sync_pools  mine={args.mine}.json ===")
+    no_push = args.no_push or args.pull_only
 
-    # 1. Pull
-    git_pull()
+    def run_once():
+        log(f"=== sync_pools  mine={args.mine}.json  push={not no_push} ===")
+        git_pull()
+        total = merge_pools()
+        reload_server()
+        if not no_push:
+            git_push(args.mine)
+        else:
+            log("pull-only mode: skipping git push")
+        log(f"=== done: {total} proxies in master_pool.json ===\n")
+        return total
 
-    # 2. Merge
-    total = merge_pools()
-
-    # 3. Reload server if running
-    reload_server()
-
-    # 4. Push
-    if not args.no_push:
-        git_push(args.mine)
+    if args.loop:
+        log(f"Loop mode: syncing every {args.interval}s")
+        while True:
+            run_once()
+            log(f"Sleeping {args.interval}s...")
+            time.sleep(args.interval)
     else:
-        log("--no-push: skipping git push")
-
-    log(f"=== done: {total} proxies in master_pool.json ===")
+        run_once()
 
 
 if __name__ == "__main__":

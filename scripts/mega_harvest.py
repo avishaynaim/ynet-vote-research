@@ -742,6 +742,20 @@ def log(msg):
 #  MAIN
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _run_sync():
+    sync_script = os.path.join(os.path.dirname(REPO), "sync_pools.py")
+    if not os.path.exists(sync_script):
+        sync_script = os.path.join(REPO, "..", "sync_pools.py")
+    sync_script = os.path.normpath(sync_script)
+    if not os.path.exists(sync_script):
+        log("sync_pools.py not found — skipping sync")
+        return
+    log("── sync start ──")
+    import subprocess
+    r = subprocess.run([sys.executable, sync_script], cwd=os.path.dirname(sync_script))
+    log(f"── sync done (exit {r.returncode}) ──")
+
+
 def main():
     global STOP
 
@@ -764,6 +778,8 @@ def main():
     _default_output = os.path.join(REPO, "proxies", f"pool_{_hostname}.json")
     ap.add_argument("--output", default=_default_output,
                     help=f"Pool file for this machine (default: pool_<hostname>.json = {_default_output!r})")
+    ap.add_argument("--sync", action="store_true",
+                    help="Run sync_pools.py (git pull+merge+push) after each cycle")
     args = ap.parse_args()
 
     global MASTER
@@ -833,11 +849,18 @@ def main():
         master = load_master()  # re-read after probe saved
         log(f"\nCycle {loop_n} complete: +{new_hits} new, {len(master)} total")
 
+        if args.sync and new_hits > 0:
+            _run_sync()
+
         if args.target > 0 and len(master) >= args.target:
             log(f"TARGET REACHED: {len(master)} >= {args.target}")
+            if args.sync:
+                _run_sync()
             break
 
         if STOP:
+            if args.sync:
+                _run_sync()
             break
 
         if args.loops != 1:
