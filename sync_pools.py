@@ -30,6 +30,7 @@ import json
 import os
 import socket
 import subprocess
+import sys
 import time
 import urllib.request
 from datetime import datetime
@@ -105,6 +106,23 @@ def reload_server():
         pass  # server might not be running on this machine
 
 
+def kick_screener():
+    """Run fast_screener once in background so new master_pool entries hit alive.json fast."""
+    screener = os.path.join(REPO, "fast_screener.py")
+    if not os.path.exists(screener):
+        return
+    try:
+        subprocess.Popen(
+            [sys.executable, screener],
+            stdout=open("/tmp/ynet_screener_kick.log", "a"),
+            stderr=subprocess.STDOUT,
+            cwd=REPO,
+        )
+        log("  Kicked fast_screener (background)")
+    except Exception as e:
+        log(f"  screener kick failed: {e}")
+
+
 def git_push(mine_file):
     rel = os.path.join("proxies", mine_file + ".json")
     abs_path = os.path.join(REPO, rel)
@@ -162,7 +180,8 @@ def main():
         log(f"=== sync_pools  mine={args.mine}.json  push={not no_push} ===")
         git_pull()
         total = merge_pools()
-        reload_server()
+        kick_screener()   # run screener immediately so new proxies hit alive.json fast
+        reload_server()   # server reload after screener finishes (screener calls reload too)
         if not no_push:
             git_push(args.mine)
         else:
