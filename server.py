@@ -86,6 +86,10 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
     from collections import defaultdict
     votes_ok_by_talkback   = defaultdict(set)  # talkback_id -> proxies that got 200
     votes_hard_fail        = defaultdict(set)  # talkback_id -> proxies ynet rejected (non-200) — never retry
+
+    # ── Comment cache — serve last good response if Ynet is temporarily down ──
+    _comment_cache      = {}   # article_id -> {"data": ..., "ts": float}
+    COMMENT_CACHE_TTL   = int(cfg.get("cache_ttl_seconds", 87))
     print(f"  Proxies : {len(proxy_pool)} loaded from {proxies_file}")
     print(f"  Workers : {proxy_workers} parallel  |  timeout {proxy_timeout}s")
     print(f"  Jitter  : {jitter_min:.1f}-{jitter_max:.1f}s random delay per vote")
@@ -252,6 +256,11 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
             return preflight()
         article_id = request.args.get("article_id", DEFAULT_ARTICLE)
 
+        # Serve from cache if fresh enough
+        cached = _comment_cache.get(article_id)
+        if cached and (time.time() - cached["ts"]) < COMMENT_CACHE_TTL:
+            return cors(make_response(jsonify(cached["data"])))
+
         # Ynet paginates the talkbacks list. Page 1 returns ~100 items and
         # `hasMore: 1` if more exist; keep walking until an empty page or
         # hasMore flips off. Cap at 50 pages as a safety rail.
@@ -292,12 +301,14 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
                 "vote_count":  c.get("likes", 0),
             } for c in all_items]
             _track_article_id(article_id)
-            return cors(make_response(jsonify({
-                "comments":      comments,
-                "total":         len(comments),
-                "sum_talkbacks": sum_talkbacks,
-            })))
+            payload = {"comments": comments, "total": len(comments),
+                       "sum_talkbacks": sum_talkbacks}
+            _comment_cache[article_id] = {"data": payload, "ts": time.time()}
+            return cors(make_response(jsonify(payload)))
         except Exception as e:
+            # Ynet is temporarily down — serve stale cache if we have it
+            if cached:
+                return cors(make_response(jsonify({**cached["data"], "stale": True})))
             return cors(make_response(jsonify({"error": str(e)}), 502))
 
     @app.route("/api/known_articles", methods=["GET", "OPTIONS"])

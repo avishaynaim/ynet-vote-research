@@ -30,10 +30,11 @@ MASTER = os.path.join(REPO, "proxies", "master_pool.json")
 ALIVE  = os.path.join(REPO, "proxies", "alive.json")
 
 # ── Tuning ─────────────────────────────────────────────────────────────────
-CYCLE_MINUTES   = 3     # sleep between cycles (was 15)
-WORKERS         = 140   # thread-pool workers — stays under proot 150-thread limit (was 100)
-PROBE_TIMEOUT   = 5.0   # per-proxy timeout seconds (was 10)
-RESAMPLE_SIZE   = 5000  # existing master entries to re-validate per cycle (was 600)
+CYCLE_MINUTES   = 5     # sleep between cycles
+WORKERS         = 120   # thread-pool workers — stays under proot 150-thread limit
+PROBE_TIMEOUT   = 7.0   # per-proxy timeout seconds (5s was too short, killed good proxies)
+RESAMPLE_SIZE   = 400   # existing master entries to re-validate per cycle — KEEP LOW
+                        # high values destroy the pool during network outages
 MIN_SURVIVORS   = 30    # refuse to overwrite alive.json below this
 FLUSH_EVERY     = 25    # write alive.json + reload server after this many new hits
 SERVER_RELOAD   = "http://127.0.0.1:5001/admin/reload"
@@ -452,8 +453,25 @@ def flush_alive(hits, tested_addrs=None, prev_alive=None):
 
 
 # ══════════════════════════════════════════════════════════════════════════
+def _ynet_reachable():
+    """Quick DNS + TCP check — returns True if www.ynet.co.il is reachable."""
+    import socket as _sock
+    try:
+        _sock.setdefaulttimeout(5)
+        _sock.getaddrinfo("www.ynet.co.il", 443)
+        return True
+    except Exception:
+        return False
+
+
 def run_cycle(cycle_num):
     log(f"=== Cycle #{cycle_num} start ===")
+
+    # Safety check: if Ynet DNS is down, ALL probes will fail and the pool
+    # will be aggressively pruned for no reason. Skip the cycle entirely.
+    if not _ynet_reachable():
+        log("  ⚠ Ynet unreachable (DNS/network) — skipping cycle to protect pool")
+        return
 
     master = load_master()
     known_addrs = {p["addr"] for p in master}
@@ -561,6 +579,10 @@ def main():
     log(f"proxy_keeper starting  cycle={CYCLE_MINUTES}min  workers={WORKERS}  resample={RESAMPLE_SIZE}  timeout={PROBE_TIMEOUT}s  probe=GET")
     cycle = 1
     while True:
+        if not _ynet_reachable():
+            log(f"  ⚠ Ynet DNS down — waiting 60s before retry (pool protected)")
+            time.sleep(60)
+            continue
         try:
             run_cycle(cycle)
         except Exception as e:

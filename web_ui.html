@@ -580,9 +580,22 @@ async function connect() {
   stopCommentAutoRefresh();
   setConnected(false);
 
-  try {
-    await loggedFetch(Config.url('comments', { article_id: Config.articleId }));
+  // Retry up to 4 times with 2s back-off — handles transient Ynet blips
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      if (attempt > 1) {
+        document.getElementById('serverInfo').textContent = `Retrying… (${attempt}/4)`;
+        await new Promise(r => setTimeout(r, 2000 * (attempt - 1)));
+      }
+      await loggedFetch(Config.url('comments', { article_id: Config.articleId }));
+      lastErr = null;
+      break;
+    } catch(e) { lastErr = e; }
+  }
+  if (lastErr) throw lastErr;
 
+  try {
     await refreshProxyCapacity();
 
     setConnected(true);
