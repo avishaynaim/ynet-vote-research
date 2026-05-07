@@ -181,21 +181,32 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
         except Exception as e:
             return cors(make_response(jsonify({"error": str(e)}), 500))
 
+    def _count_fresh(pool_snap, talkback_id):
+        """Count proxies in pool that haven't voted on this talkback yet.
+        Uses actual pool membership — evicted proxies are not subtracted."""
+        ok_set   = votes_ok_by_talkback.get(talkback_id, set())
+        fail_set = votes_hard_fail.get(talkback_id, set())
+        fresh = sum(1 for p in pool_snap
+                    if p["proxies"]["http"] not in ok_set
+                    and p["proxies"]["http"] not in fail_set)
+        ok_in_pool   = sum(1 for p in pool_snap if p["proxies"]["http"] in ok_set)
+        fail_in_pool = sum(1 for p in pool_snap if p["proxies"]["http"] in fail_set)
+        return fresh, ok_in_pool, fail_in_pool
+
     @app.route("/api/proxy_remaining/<int:talkback_id>", methods=["GET", "OPTIONS"])
     def proxy_remaining(talkback_id):
         if request.method == "OPTIONS":
             return preflight()
-        ok_set   = votes_ok_by_talkback.get(talkback_id, set())
-        fail_set = votes_hard_fail.get(talkback_id, set())
-        total    = len(proxy_pool)
-        fresh    = max(0, total - len(ok_set) - len(fail_set))
+        with pool_lock:
+            snap = list(proxy_pool)
+        fresh, used_ok, hard_fail = _count_fresh(snap, talkback_id)
         return cors(make_response(jsonify({
             "talkback_id": talkback_id,
-            "pool_total":  total,
-            "used_ok":     len(ok_set),
-            "hard_fail":   len(fail_set),
+            "pool_total":  len(snap),
+            "used_ok":     used_ok,
+            "hard_fail":   hard_fail,
             "fresh":       fresh,
-            "remaining":   fresh,   # backward compat alias
+            "remaining":   fresh,
         })))
 
     @app.route("/api/proxies", methods=["GET", "OPTIONS"])
@@ -474,9 +485,9 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
             finally:
                 _campaign_sem.release()
 
-            used_count = len(votes_ok_by_talkback.get(talkback_id, set()))
-            fail_count = len(votes_hard_fail.get(talkback_id, set()))
-            fresh      = max(0, len(proxy_pool) - used_count - fail_count)
+            with pool_lock:
+                end_snap = list(proxy_pool)
+            fresh, used_count, fail_count = _count_fresh(end_snap, talkback_id)
             yield f"data: {json.dumps({'t':'done','s':sent,'o':ok,'e':errors,'n':target,'pool_size':pool_size,'remaining':fresh,'used':used_count,'hard_fail':fail_count})}\n\n"
 
         resp = Response(stream_with_context(generate()), mimetype='text/event-stream')

@@ -854,9 +854,10 @@ async function selectComment(id, scroll = true) {
   updateSelectedBox(c);
   document.getElementById('btnLike').disabled    = false;
   document.getElementById('btnDislike').disabled = false;
+  // Refresh proxy count for the newly selected comment — each comment has its own
+  // fresh pool since Ynet deduplicates per (proxy, talkback_id), not per article.
+  refreshRemainingForTalkback(id).catch(() => {});
 }
-
-// No per-talkback tracking — proxies are reused freely.
 
 function updateSelectedBox(c) {
   const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
