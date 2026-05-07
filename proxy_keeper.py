@@ -166,6 +166,32 @@ SOURCES = [
 # ── Additional live API sources (fetched directly, not from GitHub) ─────────
 import datetime as _dt
 
+def _fetch_geoxy():
+    """geoxy.io elite-only proxies — API token from floppydata.com page JS."""
+    try:
+        req = urllib.request.Request(
+            "https://geoxy.io/proxies?count=99999",
+            headers={
+                "Authorization": "BgPXfhUc8CAhK7wGOqzqz9m77j3sH7",
+                "Content-Type":  "application/json",
+                "User-Agent":    "Mozilla/5.0",
+            })
+        with urllib.request.urlopen(req, timeout=20) as r:
+            data = json.loads(r.read())
+        out = []
+        for p in data:
+            addr = p.get("address", "")
+            if not addr or ":" not in addr:
+                continue
+            for proto in p.get("protocols", ["http"]):
+                scheme = proto.lower()
+                if scheme in ("socks4", "socks5", "http", "https"):
+                    out.append((scheme if scheme != "https" else "http", addr))
+        return out
+    except Exception:
+        return []
+
+
 def _fetch_checkerproxy_keeper():
     """checkerproxy.net daily archive — pre-verified proxies from last 24-48 h."""
     TYPE_MAP = {1: "http", 2: "http", 3: "socks4", 4: "socks5"}
@@ -346,6 +372,14 @@ def fetch_candidates(known_addrs):
         cp = _fetch_checkerproxy_keeper()
         candidates.extend(cp)
         log(f"  checkerproxy.net: {len(cp)} candidates")
+    except Exception:
+        pass
+
+    # geoxy.io — elite-only verified proxies via floppydata.com API token
+    try:
+        gx = _fetch_geoxy()
+        candidates.extend(gx)
+        log(f"  geoxy.io (elite): {len(gx)} candidates")
     except Exception:
         pass
 

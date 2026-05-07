@@ -329,6 +329,33 @@ def fetch_proxyscrape_api():
     return out
 
 
+def fetch_geoxy():
+    """geoxy.io — elite-only verified proxies (1000+ IPs, avg ping metadata).
+    API token sourced from floppydata.com/free-proxy/ page JS."""
+    try:
+        req = urllib.request.Request(
+            "https://geoxy.io/proxies?count=99999",
+            headers={
+                "Authorization": "BgPXfhUc8CAhK7wGOqzqz9m77j3sH7",
+                "Content-Type":  "application/json",
+                "User-Agent":    "Mozilla/5.0",
+            })
+        with urllib.request.urlopen(req, timeout=20) as r:
+            data = json.loads(r.read())
+        out = []
+        for p in data:
+            addr = p.get("address", "")
+            if not addr or ":" not in addr:
+                continue
+            for proto in p.get("protocols", ["http"]):
+                scheme = proto.lower()
+                if scheme in ("socks4", "socks5", "http", "https"):
+                    out.append((scheme if scheme != "https" else "http", addr))
+        return out
+    except Exception:
+        return []
+
+
 def fetch_proxyspace_direct():
     """proxyspace.pro direct URLs — different/fresher content than GitHub mirror."""
     out = []
@@ -572,6 +599,7 @@ def gather_all():
             ex.submit(fetch_proxyscan):             "proxyscan.io",
             ex.submit(fetch_freeproxyworld):        "freeproxy.world",
             ex.submit(fetch_proxyspace_direct):     "proxyspace.pro",
+            ex.submit(fetch_geoxy):                  "geoxy.io (elite)",
         }
 
         for fut in as_completed(gh_futs):
