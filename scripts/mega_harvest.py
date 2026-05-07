@@ -239,8 +239,20 @@ GITHUB_SOURCES = [
     ("p4p_http",       "http",   "https://raw.githubusercontent.com/proxy4parsing/proxy-list/main/http.txt"),
     # ── hendrikbgr ──
     ("hendrik_http",   "http",   "https://raw.githubusercontent.com/hendrikbgr/Free-Proxy-Finder/master/Proxy%20Finder/working_proxies.txt"),
+    ("hendrik2_http",  "http",   "https://raw.githubusercontent.com/hendrikbgr/Free-Proxy-Repo/master/proxy_list.txt"),
     # ── aslamy ──
     ("aslamy_http",    "http",   "https://raw.githubusercontent.com/aslamy/Free-Proxy-List/master/Proxies/http.txt"),
+    # ── casals-ar (huge lists, updated frequently) ──
+    ("casals_http",    "http",   "https://raw.githubusercontent.com/casals-ar/proxy-list/main/http"),
+    ("casals_s5",      "socks5", "https://raw.githubusercontent.com/casals-ar/proxy-list/main/socks5"),
+    ("casals_s4",      "socks4", "https://raw.githubusercontent.com/casals-ar/proxy-list/main/socks4"),
+    # ── themiralay ──
+    ("miralay",        "http",   "https://raw.githubusercontent.com/themiralay/Proxy-List-World/master/data.txt"),
+    # ── vakhov fresh list ──
+    ("vakhov_http",    "http",   "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/http.txt"),
+    ("vakhov_s5",      "socks5", "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/socks5.txt"),
+    # ── saisuiu Chinese proxies ──
+    ("saisuiu_cn",     "http",   "https://raw.githubusercontent.com/saisuiu/Lionkings-Http-Proxys-Proxies/main/cnfree.txt"),
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -394,6 +406,115 @@ def fetch_spys_scrape():
     return out
 
 
+def fetch_checkerproxy():
+    """
+    checkerproxy.net daily archive — the highest-value free source because
+    proxies here were actually verified within the last 24-48 h by an
+    independent prober, not just scraped and published.  Type field:
+      1=HTTP  2=HTTPS  3=SOCKS4  4=SOCKS5
+    We pull today + yesterday in case today's archive is still building.
+    """
+    TYPE_MAP = {1: "http", 2: "http", 3: "socks4", 4: "socks5"}
+    import datetime
+    out = []
+    for delta in range(3):
+        try:
+            d = (datetime.date.today() - datetime.timedelta(days=delta)).strftime("%Y-%m-%d")
+            body = http_get(f"https://checkerproxy.net/api/archive/{d}", 30)
+            items = json.loads(body)
+            for item in items:
+                addr   = (item.get("addr") or "").strip()
+                scheme = TYPE_MAP.get(item.get("type", 1), "http")
+                if addr:
+                    out.append((scheme, addr))
+            if out:
+                break   # got results — no need to go further back
+        except Exception:
+            pass
+    return out
+
+
+def fetch_proxydb():
+    """
+    proxydb.net — scrape proxy entries from href links like /IP/PORT#protocol.
+    Fetches first 3 pages (offsets 0, 15, 30) per protocol.
+    """
+    out = []
+    LINK_RE = re.compile(r'href="/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/(\d{2,5})#(http|socks4|socks5)"')
+    SCHEME_MAP = {"http": "http", "https": "http", "socks4": "socks4", "socks5": "socks5"}
+    seen = set()
+    for proto in ("http", "https", "socks4", "socks5"):
+        for offset in (0, 15, 30):
+            try:
+                body = http_get(f"https://proxydb.net/?protocol={proto}&offset={offset}", 15)
+                for ip, port, ptype in LINK_RE.findall(body):
+                    addr = f"{ip}:{port}"
+                    if addr not in seen:
+                        seen.add(addr)
+                        out.append((SCHEME_MAP.get(ptype, "http"), addr))
+            except Exception:
+                pass
+    return out
+
+
+def fetch_proxyscan():
+    """
+    proxyscan.io API — returns recently-tested proxies in plain JSON.
+    Free tier, no key required, returns up to 100 per request.
+    """
+    out = []
+    SCHEME_MAP = {"HTTP": "http", "HTTPS": "http", "SOCKS4": "socks4", "SOCKS5": "socks5"}
+    for proto in ("http", "socks4", "socks5"):
+        try:
+            body = http_get(
+                f"https://www.proxyscan.io/api/proxy?format=json&type={proto}&limit=100&ping=500&uptime=50",
+                20)
+            items = json.loads(body)
+            for p in items:
+                ip   = p.get("Ip", "")
+                port = p.get("Port", "")
+                ptype = p.get("Type", ["HTTP"])[0] if isinstance(p.get("Type"), list) else p.get("Type", "HTTP")
+                scheme = SCHEME_MAP.get(str(ptype).upper(), "http")
+                if ip and port:
+                    out.append((scheme, f"{ip}:{port}"))
+        except Exception:
+            pass
+    return out
+
+
+def fetch_freeproxyworld():
+    """
+    freeproxy.world — IP and Port are in separate <td> cells, so we parse
+    adjacent table cells rather than looking for IP:PORT inline.
+    Scrapes pages 1-5 of each protocol type.
+    """
+    out = []
+    IP_RE   = re.compile(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})")
+    PORT_RE = re.compile(r"(\d{2,5})")
+    TD_RE   = re.compile(r"<td[^>]*>(.*?)</td>", re.DOTALL)
+    seen = set()
+    for scheme, ptype in [("http", "http"), ("socks5", "socks5"), ("socks4", "socks4")]:
+        for page in range(1, 6):
+            try:
+                body = http_get(
+                    f"https://freeproxy.world/?type={ptype}&page={page}", 15)
+                rows = re.findall(r"<tr[^>]*>(.*?)</tr>", body, re.DOTALL)
+                for row in rows:
+                    cols = TD_RE.findall(row)
+                    if len(cols) < 2:
+                        continue
+                    ip_m   = IP_RE.search(re.sub(r"<[^>]+>", "", cols[0]))
+                    port_m = PORT_RE.search(re.sub(r"<[^>]+>", "", cols[1]))
+                    if ip_m and port_m:
+                        addr = f"{ip_m.group(1)}:{port_m.group(1)}"
+                        if addr not in seen:
+                            seen.add(addr)
+                            out.append((scheme, addr))
+            except Exception:
+                pass
+    return out
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  GATHER ALL CANDIDATES
 # ═══════════════════════════════════════════════════════════════════════════
@@ -411,12 +532,17 @@ def gather_all():
         }
         # API sources
         api_futs = {
-            ex.submit(fetch_proxyscrape_api): "proxyscrape",
-            ex.submit(fetch_geonode_api):     "geonode",
-            ex.submit(fetch_pld_api):         "proxy-list.download",
-            ex.submit(fetch_openproxy_api):   "openproxy.space",
-            ex.submit(fetch_freeproxylist_scrape): "freeproxylist.net",
-            ex.submit(fetch_spys_scrape):     "spys.me",
+            ex.submit(fetch_proxyscrape_api):      "proxyscrape",
+            ex.submit(fetch_geonode_api):           "geonode",
+            ex.submit(fetch_pld_api):               "proxy-list.download",
+            ex.submit(fetch_openproxy_api):         "openproxy.space",
+            ex.submit(fetch_freeproxylist_scrape):  "freeproxylist.net",
+            ex.submit(fetch_spys_scrape):           "spys.me",
+            # Higher-quality / pre-verified sources
+            ex.submit(fetch_checkerproxy):          "checkerproxy.net",
+            ex.submit(fetch_proxydb):               "proxydb.net",
+            ex.submit(fetch_proxyscan):             "proxyscan.io",
+            ex.submit(fetch_freeproxyworld):        "freeproxy.world",
         }
 
         for fut in as_completed(gh_futs):
@@ -660,7 +786,7 @@ def main():
         known_addrs, known_ips = known_sets(master)
         log(f"Master pool: {len(master)} proxies, {len(known_ips)} unique exit IPs")
 
-        if len(master) >= args.target:
+        if args.target > 0 and len(master) >= args.target:
             log(f"TARGET REACHED: {len(master)} >= {args.target}")
             break
 
@@ -698,7 +824,7 @@ def main():
         master = load_master()  # re-read after probe saved
         log(f"\nCycle {loop_n} complete: +{new_hits} new, {len(master)} total")
 
-        if len(master) >= args.target:
+        if args.target > 0 and len(master) >= args.target:
             log(f"TARGET REACHED: {len(master)} >= {args.target}")
             break
 

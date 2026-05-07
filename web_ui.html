@@ -618,6 +618,8 @@ function setConnected(ok) {
   const badge = document.getElementById('connBadge');
   badge.textContent = ok ? '● connected' : '● disconnected';
   badge.className   = `badge ${ok ? 'badge-connected' : 'badge-disconnected'}`;
+  if (ok) startCapacityAutoRefresh();
+  else    stopCapacityAutoRefresh();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -633,16 +635,37 @@ async function refreshProxyCapacity() {
 
     // Max = pool size. refreshRemainingForTalkback overrides this per-comment.
     const newMax = Math.max(total, 1);
+    const prev   = Config.maxVotes;
     const slider = document.getElementById('slider');
     const numInput = document.getElementById('countInput');
     if (slider)   slider.max   = newMax;
     if (numInput) numInput.max = newMax;
     Config.maxVotes = newMax;
+    // Clamp current value if pool shrank
+    syncCount(document.getElementById('countInput').value);
 
     const hint = document.getElementById('capacityHint');
     if (hint) hint.textContent = `· ${total} proxies, ${unique} unique IPs`;
-    addLog('sys', `Proxy pool: ${total} proxies (${unique} unique IPs)`);
+    if (prev !== newMax)
+      addLog('sys', `Proxy pool updated: ${total} proxies (${unique} unique IPs)`);
   } catch (e) {}
+}
+
+// ── Capacity auto-refresh — polls every 20s so the slider max stays current
+//    as proxy_keeper and mega_harvest add/remove proxies from alive.json.
+const CAPACITY_REFRESH_MS = 20_000;
+let _capacityTimer = null;
+
+function startCapacityAutoRefresh() {
+  if (_capacityTimer) return;
+  _capacityTimer = setInterval(() => {
+    if (State.selectedId) refreshRemainingForTalkback(State.selectedId);
+    else                  refreshProxyCapacity();
+  }, CAPACITY_REFRESH_MS);
+}
+
+function stopCapacityAutoRefresh() {
+  if (_capacityTimer) { clearInterval(_capacityTimer); _capacityTimer = null; }
 }
 
 async function refreshRemainingForTalkback(talkbackId) {
@@ -804,6 +827,7 @@ function renderComments() {
 
 async function selectComment(id, scroll = true) {
   State.selectedId = id;
+  localStorage.setItem(SELECTED_ID_KEY, String(id));
   const c = State.comments.find(x => x.id === id);
   if (!c) return;
   if (scroll) addLog('action', `Click: select comment #${id} — ${c.author || 'אנונימי'}`,
@@ -1097,6 +1121,8 @@ function setSort(key, btn) {
 }
 
 function onSearchInput(val) {
+  if (val) localStorage.setItem(SEARCH_KEY, val);
+  else localStorage.removeItem(SEARCH_KEY);
   addLog('change', `Change: search = "${val}"`, { field: 'search', value: val });
   renderComments();
 }
@@ -1121,6 +1147,8 @@ function onArticleUrlInput(val) {
 // ═══════════════════════════════════════════════════════════════════════════
 const RECENT_KEY = 'recentArticleUrls';
 const LAST_URL_KEY = 'lastArticleUrl';
+const SEARCH_KEY = 'commentSearch';
+const SELECTED_ID_KEY = 'selectedCommentId';
 const MAX_RECENT = 10;
 
 function loadRecent() {
@@ -1409,6 +1437,16 @@ function proxyPage(dir) {
   if (savedUrl) {
     Config.setArticleUrl(savedUrl);
   }
+
+  // Restore search query
+  const savedSearch = localStorage.getItem(SEARCH_KEY) || '';
+  if (savedSearch) {
+    document.getElementById('searchInput').value = savedSearch;
+  }
+
+  // Restore selected comment ID so loadComments() picks it up
+  const savedId = parseInt(localStorage.getItem(SELECTED_ID_KEY));
+  if (savedId) State.selectedId = savedId;
 
   document.getElementById('articleUrl').value = Config.articleUrl;
   renderRecent();

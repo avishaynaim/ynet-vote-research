@@ -30,27 +30,30 @@ MASTER = os.path.join(REPO, "proxies", "master_pool.json")
 ALIVE  = os.path.join(REPO, "proxies", "alive.json")
 
 # ── Tuning ─────────────────────────────────────────────────────────────────
-CYCLE_MINUTES   = 30
+CYCLE_MINUTES   = 15
 WORKERS         = 100   # thread-pool workers — stays well under proot 150-thread limit
-PROBE_TIMEOUT   = 7.0
+PROBE_TIMEOUT   = 10.0
 RESAMPLE_SIZE   = 600   # existing master entries to re-validate per cycle
 MIN_SURVIVORS   = 30    # refuse to overwrite alive.json below this
-FLUSH_EVERY     = 50    # write alive.json + reload server after this many new hits
+FLUSH_EVERY     = 25    # write alive.json + reload server after this many new hits
 SERVER_RELOAD   = "http://127.0.0.1:5001/admin/reload"
 
-# ── Probe target — POST to vote endpoint with dummy payload ────────────────
-# We test the VOTE endpoint (POST), not the list (GET), because ynet may allow
-# proxy reads but block proxy votes. Any response from ynet (even 400/403) means
-# the proxy can reach the vote endpoint — that's all we need.
-VOTE_URL     = "https://www.ynet.co.il/iphone/json/api/talkbacks/vote"
-VOTE_PAYLOAD = {"article_id": "yokra14737379", "talkback_id": 0,
-                "talkback_like": True, "talkback_unlike": False, "vote_type": "2state"}
+# ── Probe target — POST a real vote through the proxy ──────────────────────
+# We pick a random article + comment from known_articles.json, then vote
+# like/dislike randomly. HTTP 200 = ynet accepted the vote; any other response
+# still means the proxy is reachable but the vote was rejected (dedup / blocked).
+YNET_BASE    = "https://www.ynet.co.il"
+VOTE_URL     = f"{YNET_BASE}/iphone/json/api/talkbacks/vote"
 HEADERS  = {
     "User-Agent":   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    "Origin":       "https://www.ynet.co.il",
-    "Referer":      "https://www.ynet.co.il/",
+    "Origin":       YNET_BASE,
+    "Referer":      f"{YNET_BASE}/",
     "Content-Type": "application/json",
 }
+
+KNOWN_ARTICLES_FILE  = os.path.join(REPO, "results", "known_articles.json")
+SERVER_KNOWN_ARTICLES = "http://127.0.0.1:5001/api/known_articles"
+SERVER_USED_PROXIES   = "http://127.0.0.1:5001/api/used_proxies"
 
 SOURCES = [
     ("http",   "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt"),
@@ -78,6 +81,101 @@ SOURCES = [
     ("socks5", "https://raw.githubusercontent.com/zloi-user/hideip.me/master/socks5.txt"),
     ("http",   "https://raw.githubusercontent.com/zloi-user/hideip.me/master/http.txt"),
 ]
+
+# ── Additional live API sources (fetched directly, not from GitHub) ─────────
+import datetime as _dt
+
+def _fetch_checkerproxy_keeper():
+    """checkerproxy.net daily archive — pre-verified proxies from last 24-48 h."""
+    TYPE_MAP = {1: "http", 2: "http", 3: "socks4", 4: "socks5"}
+    out = []
+    for delta in range(3):
+        try:
+            d = (_dt.date.today() - _dt.timedelta(days=delta)).strftime("%Y-%m-%d")
+            req = urllib.request.Request(
+                f"https://checkerproxy.net/api/archive/{d}",
+                headers={"User-Agent": "proxy-keeper/1.0"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                items = json.loads(r.read())
+            for item in items:
+                addr   = (item.get("addr") or "").strip()
+                scheme = TYPE_MAP.get(item.get("type", 1), "http")
+                if addr and ":" in addr:
+                    out.append((scheme, addr))
+            if out:
+                break
+        except Exception:
+            pass
+    return out
+
+
+# ══════════════════════════════════════════════════════════════════════════
+def load_known_articles():
+    """Return list of article IDs. Try server API → local file → config fallback."""
+    try:
+        req = urllib.request.urlopen(SERVER_KNOWN_ARTICLES, timeout=5)
+        data = json.loads(req.read())
+        ids = data.get("article_ids", [])
+        if ids:
+            return ids
+    except Exception:
+        pass
+    try:
+        data = json.load(open(KNOWN_ARTICLES_FILE))
+        if isinstance(data, list) and data:
+            return data
+    except Exception:
+        pass
+    try:
+        cfg = json.load(open(os.path.join(REPO, "config.json")))
+        return [cfg.get("article_id", "yokra14737379")]
+    except Exception:
+        return ["yokra14737379"]
+
+
+def fetch_article_targets(article_ids):
+    """
+    Fetch page-1 talkback IDs for each article directly from Ynet (no proxy).
+    Returns {article_id: [talkback_id, ...]}. Articles that fail are skipped.
+    """
+    targets = {}
+    for article_id in article_ids:
+        url = f"{YNET_BASE}/iphone/json/api/talkbacks/list/v2/{article_id}/0/1"
+        try:
+            r = req_lib.get(url, headers=HEADERS, timeout=10)
+            if not r.ok:
+                continue
+            ch = r.json().get("rss", {}).get("channel", {}) or {}
+            items = ch.get("item", []) or []
+            ids = [c["id"] for c in items if c.get("id")]
+            if ids:
+                targets[article_id] = ids
+                log(f"  article {article_id}: {len(ids)} comments loaded")
+            else:
+                log(f"  article {article_id}: 0 comments (skipped)")
+        except Exception as e:
+            log(f"  article {article_id}: fetch failed ({e})")
+    return targets
+
+
+def load_used_proxy_addrs():
+    """
+    Return the set of proxy addresses that already cast a successful vote this
+    server session (via /api/used_proxies). Falls back to alive.json addresses.
+    """
+    try:
+        req = urllib.request.urlopen(SERVER_USED_PROXIES, timeout=5)
+        data = json.loads(req.read())
+        used = set(data.get("used_proxies", []))
+        if used:
+            return used
+    except Exception:
+        pass
+    try:
+        alive = json.load(open(ALIVE))
+        return {p["addr"] for p in alive}
+    except Exception:
+        return set()
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -152,6 +250,14 @@ def fetch_candidates(known_addrs):
         except Exception:
             pass
 
+    # checkerproxy.net — pre-verified daily archive (highest-quality free source)
+    try:
+        cp = _fetch_checkerproxy_keeper()
+        candidates.extend(cp)
+        log(f"  checkerproxy.net: {len(cp)} candidates")
+    except Exception:
+        pass
+
     seen = set(known_addrs)
     fresh = []
     for s, a in candidates:
@@ -165,27 +271,75 @@ def fetch_candidates(known_addrs):
 # Probe using requests (same library as server) so validated proxies actually
 # work for votes — aiohttp and requests behave differently with SOCKS proxies.
 
-def probe_one(scheme, addr):
-    """Returns record dict on success, None on failure."""
+def probe_one(scheme, addr, targets, used_addrs):
+    """
+    Test a proxy by casting a real vote on a randomly chosen article + comment.
+    - targets:    {article_id: [talkback_id, ...]} — pre-fetched this cycle
+    - used_addrs: set of addr strings already in the server's vote-ok pool
+
+    Returns a record dict if the proxy reached Ynet (any HTTP response), None if
+    the proxy failed to connect entirely.
+
+    Record fields:
+      scheme, addr, exit_ip, ynet_ms — same as before (alive.json compatible)
+      vote_ok      — True if Ynet returned HTTP 200 (vote accepted)
+      already_used — True if this addr was already in used_addrs before this probe
+      article_id, talkback_id, like — what was voted on
+    """
     proxy_url = f"{scheme}://{addr}"
     proxies = {"http": proxy_url, "https": proxy_url}
+
+    if targets:
+        article_id  = random.choice(list(targets.keys()))
+        talkback_id = random.choice(targets[article_id])
+        like        = random.choice([True, False])
+        payload = {
+            "article_id":      article_id,
+            "talkback_id":     talkback_id,
+            "talkback_like":   like,
+            "talkback_unlike": not like,
+            "vote_type":       "2state",
+        }
+    else:
+        # No comments available yet — fall back to the default article with id=0
+        # (still tests reachability; vote will be rejected by Ynet)
+        cfg_article = json.load(open(os.path.join(REPO, "config.json"))).get(
+            "article_id", "yokra14737379")
+        article_id  = cfg_article
+        talkback_id = 0
+        like        = True
+        payload = {"article_id": article_id, "talkback_id": 0,
+                   "talkback_like": True, "talkback_unlike": False, "vote_type": "2state"}
+
     t0 = time.time()
     try:
-        r = req_lib.post(VOTE_URL, json=VOTE_PAYLOAD, headers=HEADERS,
+        r = req_lib.post(VOTE_URL, json=payload, headers=HEADERS,
                          proxies=proxies, timeout=PROBE_TIMEOUT)
         ms = int((time.time() - t0) * 1000)
-        # Any HTTP response from ynet means proxy can reach the vote endpoint
-        return {"scheme": scheme, "addr": addr, "exit_ip": addr.split(":")[0], "ynet_ms": ms}
+        return {
+            "scheme":       scheme,
+            "addr":         addr,
+            "exit_ip":      addr.split(":")[0],
+            "ynet_ms":      ms,
+            "vote_ok":      r.status_code == 200,
+            "already_used": addr in used_addrs,
+            "article_id":   article_id,
+            "talkback_id":  talkback_id,
+            "like":         like,
+        }
     except Exception:
         return None
 
 
-def probe_all(candidates, on_flush):
+def probe_all(candidates, targets, used_addrs, on_flush, prev_alive=None):
     """
-    Probe all candidates with a thread pool (same library as server).
-    Calls on_flush(hits_so_far) every FLUSH_EVERY hits.
+    Probe all candidates with a thread pool.
+    Calls on_flush(hits, tested_addrs, prev_alive) every FLUSH_EVERY hits.
+    hits = proxies that reached Ynet (any HTTP response, regardless of vote_ok).
+    tested_addrs = every address probed so far (hit or miss).
     """
     hits = []
+    tested_addrs = set()
     done = 0
     total = len(candidates)
     last_flush = 0
@@ -194,32 +348,52 @@ def probe_all(candidates, on_flush):
     def _probe(item):
         nonlocal done, last_flush
         scheme, addr = item
-        rec = probe_one(scheme, addr)
+        rec = probe_one(scheme, addr, targets, used_addrs)
         with lock:
             done_val = done + 1
-            done = done_val  # noqa: F821 — intentional closure mutation via nonlocal
+            done = done_val
+            tested_addrs.add(addr)
             if rec:
                 hits.append(rec)
                 if len(hits) - last_flush >= FLUSH_EVERY:
                     last_flush = len(hits)
-                    on_flush(list(hits))
+                    on_flush(list(hits), set(tested_addrs), prev_alive)
             if done_val % 500 == 0 or done_val == total:
-                log(f"  probed {done_val}/{total}  hits: {len(hits)}")
+                vote_ok = sum(1 for h in hits if h.get("vote_ok"))
+                log(f"  probed {done_val}/{total}  reachable: {len(hits)}  vote_ok: {vote_ok}")
 
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:
         list(ex.map(_probe, candidates))
 
-    return hits
+    return hits, tested_addrs
 
 
 # ══════════════════════════════════════════════════════════════════════════
-def flush_alive(hits):
-    """Write current hits to alive.json sorted by latency, then reload server."""
-    if len(hits) < MIN_SURVIVORS:
+def flush_alive(hits, tested_addrs=None, prev_alive=None):
+    """
+    Write alive.json, merging with still-untested entries from the previous cycle.
+
+    During a cycle we only know about proxies we've actually probed so far.
+    Proxies from the previous alive.json that haven't been re-tested yet are kept
+    as-is — they're still the best information we have about those addresses.
+    As the cycle progresses, each tested address either becomes a new hit (updated)
+    or a confirmed miss (dropped). By cycle end alive.json converges to only
+    the addresses confirmed alive in the current cycle.
+    """
+    merged = list(hits)  # confirmed alive in current cycle so far
+
+    if prev_alive and tested_addrs is not None:
+        hit_addrs = {h["addr"] for h in hits}
+        for p in prev_alive:
+            if p["addr"] not in tested_addrs and p["addr"] not in hit_addrs:
+                merged.append(p)
+
+    if len(merged) < MIN_SURVIVORS:
         return
-    sorted_hits = sorted(hits, key=lambda x: x["ynet_ms"])
+    sorted_hits = sorted(merged, key=lambda x: x["ynet_ms"])
     atomic_write(ALIVE, sorted_hits)
-    log(f"  flushed {len(sorted_hits)} proxies to alive.json")
+    log(f"  flushed {len(sorted_hits)} to alive.json"
+        f"  (current-cycle: {len(hits)}, carried-over: {len(sorted_hits)-len(hits)})")
     reload_server()
 
 
@@ -230,6 +404,27 @@ def run_cycle(cycle_num):
     master = load_master()
     known_addrs = {p["addr"] for p in master}
     log(f"  master_pool: {len(master)} entries")
+
+    # Load real articles + their comments to use as vote targets
+    log("Phase 0: loading vote targets...")
+    article_ids = load_known_articles()
+    log(f"  known articles: {article_ids}")
+    targets = fetch_article_targets(article_ids)
+    if not targets:
+        log("  WARNING: no comments fetched — probes will use connectivity-only fallback")
+    total_comments = sum(len(v) for v in targets.values())
+    log(f"  {len(targets)} articles · {total_comments} comments available as targets")
+
+    # Load proxy addresses that already voted successfully this server session
+    used_addrs = load_used_proxy_addrs()
+    log(f"  used_proxies (already voted): {len(used_addrs)}")
+
+    # Snapshot existing alive.json FIRST — needed to build probe list and for merging.
+    try:
+        prev_alive = json.load(open(ALIVE))
+        log(f"  prev alive.json: {len(prev_alive)} proxies (will carry over un-retested)")
+    except Exception:
+        prev_alive = []
 
     # Fetch new candidates
     log("Phase 1: fetching candidates...")
@@ -242,21 +437,52 @@ def run_cycle(cycle_num):
     resampled_addrs = {p["addr"] for p in resample}
     resample_pairs = [(p["scheme"], p["addr"]) for p in resample]
 
-    all_candidates = resample_pairs + new_candidates
+    master_by_addr = {p["addr"]: p for p in master}
+    already_queued = set(resampled_addrs)
+
+    # Always re-test every proxy currently in alive.json — critical for accuracy.
+    alive_to_probe = []
+    for p in prev_alive:
+        if p["addr"] not in already_queued:
+            alive_to_probe.append((p["scheme"], p["addr"]))
+            already_queued.add(p["addr"])
+    if alive_to_probe:
+        log(f"  +{len(alive_to_probe)} alive.json proxies added to probe")
+
+    # Always probe every currently-used proxy too.
+    used_to_probe = [
+        (master_by_addr[a]["scheme"], a)
+        for a in used_addrs
+        if a in master_by_addr and a not in already_queued
+    ]
+    if used_to_probe:
+        log(f"  +{len(used_to_probe)} currently-used proxies added to probe")
+
+    all_candidates = resample_pairs + alive_to_probe + used_to_probe + new_candidates
     random.shuffle(all_candidates)
+
     log(f"Phase 2: probing {len(all_candidates)} total (workers={WORKERS})...")
 
+    def _flush(hits, tested, prev):
+        flush_alive(hits, tested, prev)
+
     t0 = time.time()
-    hits = probe_all(all_candidates, flush_alive)
+    hits, tested_addrs = probe_all(all_candidates, targets, used_addrs, _flush, prev_alive)
     elapsed = time.time() - t0
-    log(f"  done: {len(hits)} hits in {elapsed:.0f}s")
+    vote_ok_count    = sum(1 for h in hits if h.get("vote_ok"))
+    already_used_ct  = sum(1 for h in hits if h.get("already_used"))
+    fresh_votes      = sum(1 for h in hits if h.get("vote_ok") and not h.get("already_used"))
+    log(f"  done: {len(hits)} reachable  vote_ok: {vote_ok_count}"
+        f"  fresh_votes: {fresh_votes}  re-used: {already_used_ct}  in {elapsed:.0f}s")
 
     if len(hits) < MIN_SURVIVORS:
         log(f"  only {len(hits)} survivors — skipping master save")
         return
 
-    # Final alive.json flush
-    flush_alive(hits)
+    # Final flush — merge with prev_alive so proxies not re-tested this cycle
+    # survive into the next cycle. Only proxies confirmed dead (tested & missed)
+    # are dropped. This lets the alive pool GROW across cycles rather than reset.
+    flush_alive(hits, tested_addrs=tested_addrs, prev_alive=prev_alive)
 
     # Rebuild master: keep un-sampled entries + survivors from resample + new hits
     hit_map = {h["addr"]: h for h in hits}

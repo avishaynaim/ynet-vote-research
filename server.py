@@ -17,6 +17,9 @@ import json
 import random
 import time
 import threading
+import subprocess
+import signal
+import atexit
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from flask import Flask, request, make_response, jsonify, send_from_directory, Response, stream_with_context
@@ -97,8 +100,29 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
     log_path = os.path.join(
         results_dir, f"web_client_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
     )
+    known_articles_file = os.path.join(results_dir, "known_articles.json")
+    known_articles_lock = threading.Lock()
     log_lock = threading.Lock()
     print(f"  Client events → {log_path}")
+
+    def _track_article_id(article_id):
+        """Persist article_id to known_articles.json so proxy_keeper can use it."""
+        if not article_id:
+            return
+        try:
+            with known_articles_lock:
+                try:
+                    known = json.load(open(known_articles_file))
+                except Exception:
+                    known = []
+                if article_id not in known:
+                    known.append(article_id)
+                    tmp = known_articles_file + ".tmp"
+                    with open(tmp, "w") as f:
+                        json.dump(known, f)
+                    os.replace(tmp, known_articles_file)
+        except Exception:
+            pass
 
     PROXY_HEADERS = {
         "Origin":     YNET_BASE,
@@ -267,6 +291,7 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
                 "recommended": c.get("recommended", False),
                 "vote_count":  c.get("likes", 0),
             } for c in all_items]
+            _track_article_id(article_id)
             return cors(make_response(jsonify({
                 "comments":      comments,
                 "total":         len(comments),
@@ -274,6 +299,25 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
             })))
         except Exception as e:
             return cors(make_response(jsonify({"error": str(e)}), 502))
+
+    @app.route("/api/known_articles", methods=["GET", "OPTIONS"])
+    def api_known_articles():
+        if request.method == "OPTIONS":
+            return preflight()
+        try:
+            known = json.load(open(known_articles_file))
+        except Exception:
+            known = [DEFAULT_ARTICLE]
+        return cors(jsonify({"article_ids": known, "count": len(known)}))
+
+    @app.route("/api/used_proxies", methods=["GET", "OPTIONS"])
+    def api_used_proxies():
+        if request.method == "OPTIONS":
+            return preflight()
+        all_used = set()
+        for addrs in votes_ok_by_talkback.values():
+            all_used.update(addrs)
+        return cors(jsonify({"used_proxies": sorted(all_used), "count": len(all_used)}))
 
     # ── /proxy/vote/batch — sends N individual votes to real Ynet ────────────
 
@@ -612,4 +656,54 @@ if __name__ == "__main__":
     print("=" * 55)
 
     app, _ = create_app(cfg, base_dir)
+
+    # ── Auto-launch background daemons ───────────────────────────────────────
+    # Both processes are killed automatically when the server exits.
+    _daemons = []
+
+    def _spawn(label, cmd):
+        # Kill any leftover copies from a previous server run before spawning fresh.
+        script_name = os.path.basename(cmd[-1]) if cmd else ""
+        try:
+            out = subprocess.check_output(
+                ["pgrep", "-f", script_name], stderr=subprocess.DEVNULL).decode()
+            for pid_str in out.split():
+                pid = int(pid_str.strip())
+                if pid != os.getpid():
+                    try:
+                        os.kill(pid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+        except (subprocess.CalledProcessError, ValueError):
+            pass
+        log_path = f"/tmp/ynet_{label}.log"
+        f = open(log_path, "a")
+        p = subprocess.Popen(cmd, stdout=f, stderr=f, cwd=base_dir)
+        _daemons.append(p)
+        print(f"  {label:<14}: PID {p.pid}  → {log_path}")
+        return p
+
+    def _kill_daemons():
+        for p in _daemons:
+            try:
+                p.terminate()
+                p.wait(timeout=5)
+            except Exception:
+                try:
+                    p.kill()
+                except Exception:
+                    pass
+
+    atexit.register(_kill_daemons)
+
+    print("=" * 55)
+    print("  Starting background daemons")
+    print("=" * 55)
+    _spawn("proxy_keeper", [sys.executable, os.path.join(base_dir, "proxy_keeper.py")])
+    _spawn("mega_harvest", [sys.executable,
+                            os.path.join(base_dir, "scripts", "mega_harvest.py"),
+                            "--loops", "0", "--concurrency", "120",
+                            "--target", "0"])
+    print("=" * 55)
+
     app.run(host=host, port=port, debug=False)

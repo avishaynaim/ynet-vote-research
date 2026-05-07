@@ -2,6 +2,6 @@ __pycache__/
 *.pyc
 *.pyo
 results/
-scripts/discovery/sources/*.log
+scripts/discovery/sources/
 scripts/__pycache__/
 proxies/alive.json
