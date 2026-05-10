@@ -348,6 +348,16 @@ def fetch_proxyscrape_api():
             out.extend(parse_lines(proto, body))
         except Exception:
             pass
+        # Elite proxies with 5000ms timeout — broader pool than 1000ms tier
+        # socks5 returns ~2000+ elite IPs vs ~few hundred at 1000ms
+        try:
+            url = (f"https://api.proxyscrape.com/v2/"
+                   f"?request=getproxies&protocol={proto}"
+                   f"&timeout=5000&country=all&ssl=all&anonymity=elite")
+            body = http_get(url, 20)
+            out.extend(parse_lines(proto, body))
+        except Exception:
+            pass
     return out
 
 
@@ -751,19 +761,22 @@ def gather_all(sm=None):
         for name, scheme, url in GITHUB_SOURCES:
             sm.ensure_source(name, url=url, scheme=scheme, category="github")
         for api_name, url in [
-            ("proxyscrape",         "https://api.proxyscrape.com"),
-            ("geonode",             "https://proxylist.geonode.com"),
-            ("proxy-list.download", "https://www.proxy-list.download"),
-            ("openproxy.space",     "https://api.openproxy.space"),
-            ("freeproxylist.net",   "https://free-proxy-list.net"),
-            ("spys.me",             "https://spys.me"),
-            ("checkerproxy.net",    "https://checkerproxy.net"),
-            ("proxydb.net",         "https://proxydb.net"),
-            ("proxyscan.io",        "https://www.proxyscan.io"),
-            ("freeproxy.world",     "https://freeproxy.world"),
-            ("proxyspace.pro",      "https://proxyspace.pro"),
-            ("geoxy.io",            "https://geoxy.io"),
-            ("fate0",               "https://raw.githubusercontent.com/fate0/proxylist/master/proxy.list"),
+            ("proxyscrape",              "https://api.proxyscrape.com"),
+            ("proxyscrape_elite5k_sock", "https://api.proxyscrape.com/v2/?protocol=socks5&timeout=5000&anonymity=elite"),
+            ("proxyscrape_elite5k_s4",   "https://api.proxyscrape.com/v2/?protocol=socks4&timeout=5000&anonymity=elite"),
+            ("proxyscrape_elite5k_http", "https://api.proxyscrape.com/v2/?protocol=http&timeout=5000&anonymity=elite"),
+            ("geonode",                  "https://proxylist.geonode.com"),
+            ("proxy-list.download",      "https://www.proxy-list.download"),
+            ("openproxy.space",          "https://api.openproxy.space"),
+            ("freeproxylist.net",        "https://free-proxy-list.net"),
+            ("spys.me",                  "https://spys.me"),
+            ("checkerproxy.net",         "https://checkerproxy.net"),
+            ("proxydb.net",              "https://proxydb.net"),
+            ("proxyscan.io",             "https://www.proxyscan.io"),
+            ("freeproxy.world",          "https://freeproxy.world"),
+            ("proxyspace.pro",           "https://proxyspace.pro"),
+            ("geoxy.io",                 "https://geoxy.io"),
+            ("fate0",                    "https://raw.githubusercontent.com/fate0/proxylist/master/proxy.list"),
         ]:
             sm.ensure_source(api_name, url=url, scheme="mixed", category="api")
 
@@ -1030,6 +1043,13 @@ async def probe_candidates(candidates, concurrency, ynet_timeout, ip_timeout,
         hits += 1
         log(f"  HIT #{len(master):>5}  {scheme:6s} {addr:22s}  "
             f"exit={ip or '?':16s}  ynet={rec['ynet_ms']}ms  src={source_key}")
+
+        # Record that this source produced a proxy that actually reached YNET
+        # This builds the hit_rate quality signal in source_registry.json
+        try:
+            _sm.get().record_probe_hit(source_key)
+        except Exception:
+            pass
 
         if hits % 20 == 0:
             save_master(master)

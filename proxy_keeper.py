@@ -731,6 +731,21 @@ def fetch_candidates(known_addrs):
                 sm.record_harvest("proxyscrape", len(found))
         except Exception:
             pass
+        # Elite proxies with 5000ms timeout — larger pool than 1000ms tier
+        try:
+            src_key5k = f"proxyscrape_elite5k_{proto[:4]}"
+            sm.ensure_source(src_key5k, url=f"https://api.proxyscrape.com/v2/?protocol={proto}&timeout=5000&anonymity=elite", scheme=proto, category="api")
+            url = (f"https://api.proxyscrape.com/v2/"
+                   f"?request=getproxies&protocol={proto}"
+                   f"&timeout=5000&country=all&ssl=all&anonymity=elite")
+            body = _http_get(url, 20)
+            found = _parse_lines(proto, body)
+            for s, a in found:
+                candidates.append((s, a, src_key5k))
+            if found:
+                sm.record_harvest(src_key5k, len(found))
+        except Exception:
+            pass
 
     # fate0/proxylist — JSON-per-line format with host/port/type fields
     try:

@@ -2130,5 +2130,19 @@
     "last_harvested": null,
     "last_result": null,
     "reset_count": 0
+  },
+  "test_src_c8": {
+    "url": "http://test.example.com",
+    "scheme": "socks5",
+    "category": "test",
+    "score": 0,
+    "harvested": 100,
+    "probe_hits": 3,
+    "tested": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "last_harvested": "2026-05-10T16:18:20.885633+00:00",
+    "last_result": null,
+    "reset_count": 0
   }
 }

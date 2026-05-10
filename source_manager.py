@@ -74,6 +74,7 @@ class SourceManager:
                     "category":       category,
                     "score":          0,
                     "harvested":      0,
+                    "probe_hits":     0,
                     "tested":         0,
                     "succeeded":      0,
                     "failed":         0,
@@ -92,6 +93,23 @@ class SourceManager:
                 return
             self._registry[key]["harvested"] = self._registry[key].get("harvested", 0) + count
             self._registry[key]["last_harvested"] = _now()
+            self._save()
+
+    # ── probe hit tracking ────────────────────────────────────────────────────
+
+    def record_probe_hit(self, key: str):
+        """Called when a proxy from this source passes the YNET probe (HIT).
+
+        A probe_hit means the proxy reached YNET and returned a valid response —
+        higher quality signal than just being harvested from the source list.
+        hit_rate = probe_hits / harvested * 100 shows source quality.
+        """
+        if not key:
+            return
+        with self._lock:
+            if key not in self._registry:
+                return
+            self._registry[key]["probe_hits"] = self._registry[key].get("probe_hits", 0) + 1
             self._save()
 
     # ── addr → source lookup (cached) ─────────────────────────────────────────
@@ -219,20 +237,30 @@ class SourceManager:
         return result
 
     def print_leaderboard_extended(self, n: int = 25):
-        """Extended leaderboard with ok_rate = succeeded/tested and alive count columns."""
+        """Extended leaderboard with ok_rate, probe_hits, hit_rate and alive count columns.
+
+        Columns:
+          probe_hits — count of proxies from this source that passed YNET probe
+          hit_rate   — probe_hits / harvested * 100 (source quality signal)
+          ok_rate    — succeeded / tested (vote success rate, populated later)
+          alive      — currently alive proxies from this source
+        """
         rows = self.ranked_sources()
         alive_data = self.alive_yield_ratio()
-        print(f"\n  {'Source':<32} {'score':>6} {'ok':>5} {'fail':>5} {'tested':>6} {'harvested':>9} {'ok_rate':>8} {'alive':>6}")
-        print("  " + "-" * 85)
+        print(f"\n  {'Source':<32} {'score':>6} {'ok':>5} {'fail':>5} {'tested':>6} {'harvested':>9} {'p_hits':>7} {'hit%':>6} {'ok_rate':>8} {'alive':>6}")
+        print("  " + "-" * 98)
         for key, info in rows[:n]:
             tested = info.get("tested", 0)
             succeeded = info.get("succeeded", 0)
+            harvested = info.get("harvested", 0)
+            probe_hits = info.get("probe_hits", 0)
             ok_rate = f"{succeeded/tested:.1%}" if tested > 0 else "—"
+            hit_rate = f"{probe_hits/harvested*100:.1f}%" if harvested > 0 and probe_hits > 0 else "—"
             alive_count = alive_data.get(key, {}).get("alive", 0)
             alive_str = str(alive_count) if alive_count > 0 else "—"
             print(f"  {key:<32} {info.get('score',0):>6} "
                   f"{succeeded:>5} {info.get('failed',0):>5} "
-                  f"{tested:>6} {info.get('harvested',0):>9} {ok_rate:>8} {alive_str:>6}")
+                  f"{tested:>6} {harvested:>9} {probe_hits:>7} {hit_rate:>6} {ok_rate:>8} {alive_str:>6}")
         pos = sum(1 for _, v in rows if v.get("score", 0) > 0)
         neg = sum(1 for _, v in rows if v.get("score", 0) < 0)
         print(f"\n  Total: {len(rows)} sources | {pos} positive | {neg} negative | "
@@ -259,6 +287,7 @@ class SourceManager:
                 "category":       category,
                 "score":          0,
                 "harvested":      0,
+                "probe_hits":     0,
                 "tested":         0,
                 "succeeded":      0,
                 "failed":         0,
