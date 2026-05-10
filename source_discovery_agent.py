@@ -158,6 +158,7 @@ STATIC_ENDPOINTS = [
     ("proxylist_download_http",  "https://www.proxy-list.download/api/v1/get?type=http", "http"),
     ("proxylist_download_s4",    "https://www.proxy-list.download/api/v1/get?type=socks4", "socks4"),
     ("proxylist_download_s5",    "https://www.proxy-list.download/api/v1/get?type=socks5", "socks5"),
+    ("fate0_proxylist",          "https://raw.githubusercontent.com/fate0/proxylist/master/proxy.list", "mixed"),
 ]
 
 GITHUB_SEARCH_QUERIES = [

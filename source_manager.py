@@ -192,6 +192,52 @@ class SourceManager:
         print(f"\n  Total: {len(rows)} sources | {pos} positive | {neg} negative | "
               f"{len(rows)-pos-neg} neutral")
 
+    def alive_yield_ratio(self, alive_path: str = "") -> dict:
+        """Return per-source alive-proxy counts and yield ratios.
+
+        Reads alive.json to count how many currently-alive proxies came from
+        each source. Returns dict of source_key → {alive, harvested, ratio}.
+        """
+        if not alive_path:
+            alive_path = os.path.join(REPO, "proxies", "alive.json")
+        try:
+            alive = json.load(open(alive_path, encoding="utf-8"))
+        except Exception:
+            return {}
+        from collections import Counter
+        c = Counter(p["source"] for p in alive if p.get("source"))
+        result = {}
+        with self._lock:
+            for key, alive_count in c.items():
+                harvested = self._registry.get(key, {}).get("harvested", 0)
+                ratio = alive_count / harvested if harvested > 0 else 0.0
+                result[key] = {
+                    "alive":     alive_count,
+                    "harvested": harvested,
+                    "ratio":     ratio,
+                }
+        return result
+
+    def print_leaderboard_extended(self, n: int = 25):
+        """Extended leaderboard with ok_rate = succeeded/tested and alive count columns."""
+        rows = self.ranked_sources()
+        alive_data = self.alive_yield_ratio()
+        print(f"\n  {'Source':<32} {'score':>6} {'ok':>5} {'fail':>5} {'tested':>6} {'harvested':>9} {'ok_rate':>8} {'alive':>6}")
+        print("  " + "-" * 85)
+        for key, info in rows[:n]:
+            tested = info.get("tested", 0)
+            succeeded = info.get("succeeded", 0)
+            ok_rate = f"{succeeded/tested:.1%}" if tested > 0 else "—"
+            alive_count = alive_data.get(key, {}).get("alive", 0)
+            alive_str = str(alive_count) if alive_count > 0 else "—"
+            print(f"  {key:<32} {info.get('score',0):>6} "
+                  f"{succeeded:>5} {info.get('failed',0):>5} "
+                  f"{tested:>6} {info.get('harvested',0):>9} {ok_rate:>8} {alive_str:>6}")
+        pos = sum(1 for _, v in rows if v.get("score", 0) > 0)
+        neg = sum(1 for _, v in rows if v.get("score", 0) < 0)
+        print(f"\n  Total: {len(rows)} sources | {pos} positive | {neg} negative | "
+              f"{len(rows)-pos-neg} neutral")
+
     def stats(self) -> dict:
         with self._lock:
             r = self._registry
@@ -244,6 +290,9 @@ if __name__ == "__main__":
     if cmd == "leaderboard":
         n = int(sys.argv[2]) if len(sys.argv) > 2 else 30
         sm.print_leaderboard(n)
+    elif cmd == "leaderboard_ext":
+        n = int(sys.argv[2]) if len(sys.argv) > 2 else 25
+        sm.print_leaderboard_extended(n)
     elif cmd == "stats":
         print(json.dumps(sm.stats(), indent=2))
     elif cmd == "reset":
@@ -258,4 +307,4 @@ if __name__ == "__main__":
         added = sm.add_source(key, url, scheme, "manual")
         print(f"{'Added' if added else 'Already exists'}: {key}")
     else:
-        print(f"Commands: leaderboard [n], stats, reset, add <key> <url> [scheme]")
+        print(f"Commands: leaderboard [n], leaderboard_ext [n], stats, reset, add <key> <url> [scheme]")

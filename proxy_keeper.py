@@ -23,6 +23,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
 import requests as req_lib
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import source_manager as _sm
 
 # ── Paths ──────────────────────────────────────────────────────────────────
 REPO   = os.path.dirname(os.path.abspath(__file__))
@@ -169,8 +172,9 @@ SOURCES = [
     ("http",   "https://raw.githubusercontent.com/tuanminpay/live-proxy/master/http.txt"),
     ("socks4", "https://raw.githubusercontent.com/tuanminpay/live-proxy/master/socks4.txt"),
     ("socks5", "https://raw.githubusercontent.com/tuanminpay/live-proxy/master/socks5.txt"),
-    # ── proxy4parsing (19k http entries) ─────────────────────────────────────
+    # ── proxy4parsing (19k http entries + hproxy.txt ~11k entries) ──────────
     ("http",   "https://raw.githubusercontent.com/proxy4parsing/proxy-list/main/http.txt"),
+    ("http",   "https://raw.githubusercontent.com/proxy4parsing/proxy-list/main/hproxy.txt"),
     # ── saschazesiger ────────────────────────────────────────────────────────
     ("http",   "https://raw.githubusercontent.com/saschazesiger/Free-Proxies/master/proxies/http.txt"),
     ("socks4", "https://raw.githubusercontent.com/saschazesiger/Free-Proxies/master/proxies/socks4.txt"),
@@ -248,6 +252,36 @@ def _fetch_geoxy():
                 scheme = proto.lower()
                 if scheme in ("socks4", "socks5", "http", "https"):
                     out.append((scheme if scheme != "https" else "http", addr))
+        return out
+    except Exception:
+        return []
+
+
+def _fetch_fate0():
+    """fate0/proxylist — JSON objects one per line, each with host/port/type fields.
+    Format: {"host":"ip","port":N,"type":"http|socks5"} — updated daily."""
+    TYPE_MAP = {"http": "http", "https": "http", "socks4": "socks4", "socks5": "socks5"}
+    try:
+        req = urllib.request.Request(
+            "https://raw.githubusercontent.com/fate0/proxylist/master/proxy.list",
+            headers={"User-Agent": "proxy-keeper/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            text = r.read().decode("utf-8", errors="ignore")
+        out = []
+        for line in text.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                host = obj.get("host", "").strip()
+                port = obj.get("port")
+                ptype = str(obj.get("type", "http")).lower()
+                scheme = TYPE_MAP.get(ptype, "http")
+                if host and port and ":" not in host:
+                    out.append((scheme, f"{host}:{port}"))
+            except Exception:
+                pass
         return out
     except Exception:
         return []
@@ -472,6 +506,14 @@ def fetch_candidates(known_addrs):
         except Exception:
             pass
 
+    # fate0/proxylist — JSON-per-line format with host/port/type fields
+    try:
+        f0 = _fetch_fate0()
+        candidates.extend(f0)
+        log(f"  fate0/proxylist: {len(f0)} candidates")
+    except Exception:
+        pass
+
     # checkerproxy.net — pre-verified daily archive (highest-quality free source)
     try:
         cp = _fetch_checkerproxy_keeper()
@@ -611,6 +653,16 @@ def flush_alive(hits, tested_addrs=None, prev_alive=None):
     or a confirmed miss (dropped). By cycle end alive.json converges to only
     the addresses confirmed alive in the current cycle.
     """
+    # Enrich hits with source tags from master_pool where the hit lacks one
+    try:
+        master_src = json.load(open(MASTER))
+        _src_map = {p["addr"]: p.get("source") for p in master_src if p.get("addr") and p.get("source")}
+        for h in hits:
+            if not h.get("source") and h.get("addr") in _src_map:
+                h["source"] = _src_map[h["addr"]]
+    except Exception:
+        pass
+
     merged = list(hits)  # confirmed alive in current cycle so far
 
     if prev_alive and tested_addrs is not None:
@@ -621,7 +673,13 @@ def flush_alive(hits, tested_addrs=None, prev_alive=None):
 
     if len(merged) < MIN_SURVIVORS:
         return
-    sorted_hits = sorted(merged, key=lambda x: x["ynet_ms"])
+    # Sort: socks5 first (best tunneling), then socks4, then http/https.
+    # Within each scheme, fastest (lowest ynet_ms) first.
+    SCHEME_RANK = {"socks5": 0, "socks4": 1, "http": 2, "https": 2}
+    sorted_hits = sorted(
+        merged,
+        key=lambda x: (SCHEME_RANK.get(x.get("scheme", "http"), 2), x.get("ynet_ms", 99999))
+    )
     atomic_write(ALIVE, sorted_hits)
     log(f"  flushed {len(sorted_hits)} to alive.json"
         f"  (current-cycle: {len(hits)}, carried-over: {len(sorted_hits)-len(hits)})")
@@ -648,6 +706,12 @@ def run_cycle(cycle_num):
     if not _ynet_reachable():
         log("  ⚠ Ynet unreachable (DNS/network) — skipping cycle to protect pool")
         return
+
+    # Ensure "keeper" source exists in registry for scoring new candidates found here
+    try:
+        _sm.get().ensure_source("keeper", url="proxy_keeper.py", scheme="mixed", category="keeper")
+    except Exception:
+        pass
 
     master = load_master()
     known_addrs = {p["addr"] for p in master}
@@ -740,9 +804,17 @@ def run_cycle(cycle_num):
         if p["addr"] not in resampled_addrs:
             kept.append(p)
         elif p["addr"] in hit_addrs:
-            kept.append(hit_map[p["addr"]])
+            # Merge probe result with original entry to preserve source tag
+            merged_entry = dict(hit_map[p["addr"]])
+            if p.get("source") and not merged_entry.get("source"):
+                merged_entry["source"] = p["source"]
+            kept.append(merged_entry)
 
     new_entries = [h for h in hits if h["addr"] not in known_addrs]
+    # Tag new entries found by keeper with "keeper" source so they can be scored
+    for h in new_entries:
+        if not h.get("source"):
+            h["source"] = "keeper"
     merged = kept + new_entries
 
     pruned = len(resample) - sum(1 for p in resample if p["addr"] in hit_addrs)

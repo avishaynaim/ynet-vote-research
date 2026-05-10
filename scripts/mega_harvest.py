@@ -221,10 +221,10 @@ GITHUB_SOURCES = [
     ("razvan_http",    "http",   "https://raw.githubusercontent.com/im-razvan/proxy_list/main/http.txt"),
     ("razvan_s4",      "socks4", "https://raw.githubusercontent.com/im-razvan/proxy_list/main/socks4.txt"),
     ("razvan_s5",      "socks5", "https://raw.githubusercontent.com/im-razvan/proxy_list/main/socks5.txt"),
-    # ── ObcbO ──
-    ("obcbo_http",     "http",   "https://raw.githubusercontent.com/ObcbO/getproxy/master/http.txt"),
-    ("obcbo_s4",       "socks4", "https://raw.githubusercontent.com/ObcbO/getproxy/master/socks4.txt"),
-    ("obcbo_s5",       "socks5", "https://raw.githubusercontent.com/ObcbO/getproxy/master/socks5.txt"),
+    # ── ObcbO (files live under file/ subdirectory) ──
+    ("obcbo_http",     "http",   "https://raw.githubusercontent.com/ObcbO/getproxy/master/file/http.txt"),
+    ("obcbo_s4",       "socks4", "https://raw.githubusercontent.com/ObcbO/getproxy/master/file/socks4.txt"),
+    ("obcbo_s5",       "socks5", "https://raw.githubusercontent.com/ObcbO/getproxy/master/file/socks5.txt"),
     # ── ProxyScrape community maintained ──
     ("pxscrape_http",  "http",   "https://raw.githubusercontent.com/proxyscrape/free-proxy-list/master/proxies/http.txt"),
     ("pxscrape_s4",    "socks4", "https://raw.githubusercontent.com/proxyscrape/free-proxy-list/master/proxies/socks4.txt"),
@@ -245,6 +245,7 @@ GITHUB_SOURCES = [
     ("rx4096_s5",      "socks5", "https://raw.githubusercontent.com/RX4096/proxy-list/main/online/socks5.txt"),
     # ── proxy4parsing ──
     ("p4p_http",       "http",   "https://raw.githubusercontent.com/proxy4parsing/proxy-list/main/http.txt"),
+    ("p4p_hproxy",     "http",   "https://raw.githubusercontent.com/proxy4parsing/proxy-list/main/hproxy.txt"),
     # ── hendrikbgr ──
     ("hendrik_http",   "http",   "https://raw.githubusercontent.com/hendrikbgr/Free-Proxy-Finder/master/Proxy%20Finder/working_proxies.txt"),
     ("hendrik2_http",  "http",   "https://raw.githubusercontent.com/hendrikbgr/Free-Proxy-Repo/master/proxy_list.txt"),
@@ -342,6 +343,41 @@ def fetch_proxyscrape_api():
     return out
 
 
+def fetch_proxyscrape_country():
+    """Fetch proxies from top-yield countries via proxyscrape API.
+
+    Countries chosen for highest free-proxy volume: CN, RU, VN, BR, IN.
+    Fetches http + socks5 per country (10 parallel calls) to find IPs not in
+    the global all-country results (country pools often differ from global dumps).
+    """
+    TOP_COUNTRIES = ["CN", "RU", "VN", "BR", "IN"]
+    tasks = []
+    for cc in TOP_COUNTRIES:
+        for proto in ("http", "socks5"):
+            url = (f"https://api.proxyscrape.com/v2/"
+                   f"?request=getproxies&protocol={proto}"
+                   f"&country={cc}&timeout=10000&ssl=all&anonymity=all")
+            tasks.append((proto, url))
+
+    out = []
+    def _fetch(proto_url):
+        proto, url = proto_url
+        try:
+            body = http_get(url, 20)
+            return parse_lines(proto, body)
+        except Exception:
+            return []
+
+    with ThreadPoolExecutor(max_workers=10) as ex:
+        futs = [ex.submit(_fetch, t) for t in tasks]
+        for fut in as_completed(futs):
+            try:
+                out.extend(fut.result())
+            except Exception:
+                pass
+    return out
+
+
 def fetch_geoxy():
     """geoxy.io — elite-only verified proxies (1000+ IPs, avg ping metadata).
     API token sourced from floppydata.com/free-proxy/ page JS."""
@@ -383,12 +419,37 @@ def fetch_proxyspace_direct():
 
 def fetch_geonode_api():
     out = []
+    GEONODE_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124.0.0.0 Safari/537.36"
+
+    def _geonode_page(url):
+        """Fetch a geonode API page; on 403 or empty, retry once with explicit UA."""
+        try:
+            return http_get(url, 30)
+        except Exception as e:
+            err_str = str(e)
+            # Retry with explicit User-Agent on 403 or connection errors
+            if "403" in err_str or "Forbidden" in err_str or not err_str:
+                try:
+                    req = urllib.request.Request(url, headers={"User-Agent": GEONODE_UA,
+                                                                "Accept": "application/json"})
+                    with urllib.request.urlopen(req, timeout=30) as r:
+                        return r.read().decode(errors="replace")
+                except Exception:
+                    pass
+            return None
+
     try:
         for page in range(1, 31):
             url = (f"https://proxylist.geonode.com/api/proxy-list"
-                   f"?limit=500&page={page}&sort_by=lastChecked&sort_type=desc")
-            body = http_get(url, 30)
-            data = json.loads(body).get("data", [])
+                   f"?limit=500&page={page}&sort_by=lastChecked&sort_type=desc"
+                   f"&anonymityLevel=elite%2Canonymous")
+            body = _geonode_page(url)
+            if not body:
+                break
+            try:
+                data = json.loads(body).get("data", [])
+            except Exception:
+                break
             if not data:
                 break
             for p in data:
@@ -508,25 +569,89 @@ def fetch_checkerproxy():
 
 def fetch_proxydb():
     """
-    proxydb.net — scrape proxy entries from href links like /IP/PORT#protocol.
-    Fetches first 3 pages (offsets 0, 15, 30) per protocol.
+    proxydb.net — scrape proxy entries using multiple extraction strategies.
+    Strategy 1: href="/IP/PORT#protocol" anchor links.
+    Strategy 2: separate IP and port table cells extracted via regex.
+    Strategy 3: plain IP:PORT pattern anywhere in the page.
+    Fetches elite+anonymous HTTP and SOCKS5 pages (offsets 0, 15, 30).
     """
     out = []
-    LINK_RE = re.compile(r'href="/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/(\d{2,5})#(http|socks4|socks5)"')
     SCHEME_MAP = {"http": "http", "https": "http", "socks4": "socks4", "socks5": "socks5"}
+    # Strategy 1: href anchor links (original page format)
+    LINK_RE   = re.compile(r'href="/(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})/(\d{2,5})#(https?|socks4|socks5)"', re.I)
+    # Strategy 2: adjacent IP and port cells in table rows
+    IP_RE     = re.compile(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})")
+    PORT_RE   = re.compile(r"\b(\d{2,5})\b")
+    # Strategy 3: bare IP:PORT anywhere
+    BARE_RE   = re.compile(r"(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}):(\d{2,5})")
     seen = set()
-    for proto in ("http", "https", "socks4", "socks5"):
-        for offset in (0, 15, 30):
-            try:
-                body = http_get(f"https://proxydb.net/?protocol={proto}&offset={offset}", 15)
-                for ip, port, ptype in LINK_RE.findall(body):
-                    addr = f"{ip}:{port}"
+
+    def _extract(body, scheme):
+        # S1: anchor links with protocol hint
+        for ip, port, ptype in LINK_RE.findall(body):
+            addr = f"{ip}:{port}"
+            if addr not in seen:
+                seen.add(addr)
+                out.append((SCHEME_MAP.get(ptype.lower(), scheme), addr))
+        # S2: table cells — look for <td> containing only an IP, next <td> only a port
+        rows = re.findall(r"<tr[^>]*>(.*?)</tr>", body, re.DOTALL | re.I)
+        for row in rows:
+            tds = re.findall(r"<td[^>]*>(.*?)</td>", row, re.DOTALL | re.I)
+            tds_clean = [re.sub(r"<[^>]+>", "", t).strip() for t in tds]
+            for i in range(len(tds_clean) - 1):
+                ip_m   = IP_RE.fullmatch(tds_clean[i])
+                port_m = PORT_RE.fullmatch(tds_clean[i + 1]) if i + 1 < len(tds_clean) else None
+                if ip_m and port_m:
+                    addr = f"{ip_m.group(1)}:{port_m.group(1)}"
                     if addr not in seen:
                         seen.add(addr)
-                        out.append((SCHEME_MAP.get(ptype, "http"), addr))
+                        out.append((scheme, addr))
+        # S3: fallback bare IP:PORT scan
+        for ip, port in BARE_RE.findall(body):
+            addr = f"{ip}:{port}"
+            if addr not in seen:
+                seen.add(addr)
+                out.append((scheme, addr))
+
+    # Fetch anonymous+elite HTTP, SOCKS5, SOCKS4 — highest bypass potential
+    for proto, scheme in (("http&anonimity=elite,anonymous", "http"),
+                          ("socks5", "socks5"),
+                          ("socks4&anonimity=elite,anonymous", "socks4")):
+        for offset in (0, 15, 30):
+            try:
+                url = f"https://proxydb.net/?protocol={proto}&offset={offset}"
+                body = http_get(url, 15)
+                _extract(body, scheme)
             except Exception:
                 pass
     return out
+
+
+def fetch_fate0():
+    """fate0/proxylist — JSON objects one per line, each with host/port/type fields.
+    Format: {"host":"ip","port":N,"type":"http|socks5"} — updated daily."""
+    TYPE_MAP = {"http": "http", "https": "http", "socks4": "socks4", "socks5": "socks5"}
+    try:
+        body = http_get(
+            "https://raw.githubusercontent.com/fate0/proxylist/master/proxy.list", 30)
+        out = []
+        for line in body.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                host = obj.get("host", "").strip()
+                port = obj.get("port")
+                ptype = str(obj.get("type", "http")).lower()
+                scheme = TYPE_MAP.get(ptype, "http")
+                if host and port and ":" not in host:
+                    out.append((scheme, f"{host}:{port}"))
+            except Exception:
+                pass
+        return out
+    except Exception:
+        return []
 
 
 def fetch_proxyscan():
@@ -603,6 +728,7 @@ def gather_all(sm=None):
             sm.ensure_source(name, url=url, scheme=scheme, category="github")
         for api_name, url in [
             ("proxyscrape",         "https://api.proxyscrape.com"),
+            ("proxyscrape_country", "https://api.proxyscrape.com/v2/?request=getproxies&country=CN"),
             ("geonode",             "https://proxylist.geonode.com"),
             ("proxy-list.download", "https://www.proxy-list.download"),
             ("openproxy.space",     "https://api.openproxy.space"),
@@ -614,6 +740,7 @@ def gather_all(sm=None):
             ("freeproxy.world",     "https://freeproxy.world"),
             ("proxyspace.pro",      "https://proxyspace.pro"),
             ("geoxy.io",            "https://geoxy.io"),
+            ("fate0",               "https://raw.githubusercontent.com/fate0/proxylist/master/proxy.list"),
         ]:
             sm.ensure_source(api_name, url=url, scheme="mixed", category="api")
 
@@ -637,6 +764,8 @@ def gather_all(sm=None):
             ex.submit(fetch_freeproxyworld):        "freeproxy.world",
             ex.submit(fetch_proxyspace_direct):     "proxyspace.pro",
             ex.submit(fetch_geoxy):                 "geoxy.io",
+            ex.submit(fetch_fate0):                 "fate0",
+            ex.submit(fetch_proxyscrape_country):   "proxyscrape_country",
         }
 
         for fut in as_completed(gh_futs):
@@ -666,9 +795,10 @@ def gather_all(sm=None):
     # Fetch from registry-discovered sources not in the hardcoded lists
     if sm:
         hardcoded_keys = {name for name, _, _ in GITHUB_SOURCES} | {
-            "proxyscrape", "geonode", "proxy-list.download", "openproxy.space",
-            "freeproxylist.net", "spys.me", "checkerproxy.net", "proxydb.net",
-            "proxyscan.io", "freeproxy.world", "proxyspace.pro", "geoxy.io",
+            "proxyscrape", "proxyscrape_country", "geonode", "proxy-list.download",
+            "openproxy.space", "freeproxylist.net", "spys.me", "checkerproxy.net",
+            "proxydb.net", "proxyscan.io", "freeproxy.world", "proxyspace.pro",
+            "geoxy.io", "fate0",
         }
         discovered = [
             (key, info["url"], info.get("scheme", "http"))
@@ -730,9 +860,16 @@ def load_master():
 
 
 def save_master(proxies):
+    # Sort: socks5 first (best tunneling), then socks4, then http/https.
+    # Within each scheme group, sort by ynet_ms ascending (fastest first).
+    _SCHEME_RANK = {"socks5": 0, "socks4": 1, "http": 2, "https": 2}
+    sorted_proxies = sorted(
+        proxies,
+        key=lambda x: (_SCHEME_RANK.get(x.get("scheme", "http"), 2), x.get("ynet_ms", 99999))
+    )
     tmp = MASTER + ".tmp"
     with open(tmp, "w") as f:
-        json.dump(proxies, f, indent=2, ensure_ascii=False)
+        json.dump(sorted_proxies, f, indent=2, ensure_ascii=False)
     os.replace(tmp, MASTER)
 
 
