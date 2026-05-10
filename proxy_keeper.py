@@ -59,6 +59,195 @@ SERVER_KNOWN_ARTICLES = "http://127.0.0.1:5001/api/known_articles"
 SERVER_USED_PROXIES   = "http://127.0.0.1:5001/api/used_proxies"
 DEFAULT_ARTICLE       = "yokra14737379"
 
+# ── URL → source registry key mapping ────────────────────────────────────────
+# Maps each URL in SOURCES to its canonical source key (matching mega_harvest.py
+# GITHUB_SOURCES names). Proxies fetched from each URL are tagged with their
+# specific source so scores in source_registry.json go to the right source.
+URL_TO_SOURCE = {
+    # TheSpeedX PROXY-List
+    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt":    "speedx_http",
+    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks4.txt":  "speedx_s4",
+    "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/socks5.txt":  "speedx_s5",
+    # TheSpeedX SOCKS-List
+    "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt":    "speedx_sockslist_http",
+    "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks4.txt":  "speedx_sockslist_s4",
+    "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt":  "speedx_sockslist_s5",
+    # proxyspace.pro direct
+    "https://proxyspace.pro/http.txt":   "prxspace_http",
+    "https://proxyspace.pro/socks4.txt": "prxspace_s4",
+    "https://proxyspace.pro/socks5.txt": "prxspace_s5",
+    # monosans
+    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt":              "monosans_http",
+    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks4.txt":            "monosans_s4",
+    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt":            "monosans_s5",
+    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies_anonymous/http.txt":    "monosans_http",
+    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies_anonymous/socks4.txt":  "monosans_s4",
+    "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies_anonymous/socks5.txt":  "monosans_s5",
+    # mmpx12
+    "https://raw.githubusercontent.com/mmpx12/proxy-list/master/http.txt":   "mmpx12_http",
+    "https://raw.githubusercontent.com/mmpx12/proxy-list/master/socks4.txt": "mmpx12_s4",
+    "https://raw.githubusercontent.com/mmpx12/proxy-list/master/socks5.txt": "mmpx12_s5",
+    # ErcinDedeoglu
+    "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/http.txt":   "ercin_http",
+    "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/socks4.txt": "ercin_s4",
+    "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/socks5.txt": "ercin_s5",
+    # proxifly
+    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/all/data.txt":           "proxifly",
+    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt":   "proxifly_http",
+    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks4/data.txt": "proxifly_s4",
+    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.txt": "proxifly_s5",
+    # hookzof
+    "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt": "hookzof_s5",
+    # prxchk
+    "https://raw.githubusercontent.com/prxchk/proxy-list/main/http.txt":   "prxchk_http",
+    "https://raw.githubusercontent.com/prxchk/proxy-list/main/socks4.txt": "prxchk_s4",
+    "https://raw.githubusercontent.com/prxchk/proxy-list/main/socks5.txt": "prxchk_s5",
+    # MuRongPIG
+    "https://raw.githubusercontent.com/MuRongPIG/Proxy-Master/main/http.txt":   "murong_http",
+    "https://raw.githubusercontent.com/MuRongPIG/Proxy-Master/main/socks4.txt": "murong_s4",
+    "https://raw.githubusercontent.com/MuRongPIG/Proxy-Master/main/socks5.txt": "murong_s5",
+    # yemixzy
+    "https://raw.githubusercontent.com/yemixzy/proxy-list/master/proxies/http.txt":   "yemixzy_http",
+    "https://raw.githubusercontent.com/yemixzy/proxy-list/master/proxies/socks5.txt": "yemixzy_s5",
+    "https://raw.githubusercontent.com/yemixzy/proxy-list/master/proxies/socks4.txt": "yemixzy_s4",
+    # zloi-user
+    "https://raw.githubusercontent.com/zloi-user/hideip.me/master/socks5.txt": "zloi_s5",
+    "https://raw.githubusercontent.com/zloi-user/hideip.me/master/http.txt":   "zloi_http",
+    "https://raw.githubusercontent.com/zloi-user/hideip.me/master/socks4.txt": "zloi_s4",
+    # roosterkid
+    "https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS5_RAW.txt": "roosterkid_s5",
+    "https://raw.githubusercontent.com/roosterkid/openproxylist/main/SOCKS4_RAW.txt": "roosterkid_s4",
+    "https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS_RAW.txt":  "roosterkid_http",
+    # B4RC0DE
+    "https://raw.githubusercontent.com/B4RC0DE-TM/proxy-list/main/SOCKS5.txt": "b4_s5",
+    "https://raw.githubusercontent.com/B4RC0DE-TM/proxy-list/main/SOCKS4.txt": "b4_s4",
+    "https://raw.githubusercontent.com/B4RC0DE-TM/proxy-list/main/HTTP.txt":   "b4_http",
+    # ShiftyTR
+    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks5.txt": "shifty_s5",
+    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/socks4.txt": "shifty_s4",
+    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/http.txt":   "shifty_http",
+    "https://raw.githubusercontent.com/ShiftyTR/Proxy-List/master/https.txt":  "shifty_http",
+    # jetkai
+    "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks5.txt": "jetkai_s5",
+    "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks4.txt": "jetkai_s4",
+    "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt":   "jetkai_http",
+    "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-https.txt":  "jetkai_http",
+    # rdavydov
+    "https://raw.githubusercontent.com/rdavydov/proxy-list/main/proxies/socks5.txt": "rdavy_s5",
+    "https://raw.githubusercontent.com/rdavydov/proxy-list/main/proxies/socks4.txt": "rdavy_s4",
+    "https://raw.githubusercontent.com/rdavydov/proxy-list/main/proxies/http.txt":   "rdavy_http",
+    # sunny9577
+    "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/socks5_proxies.txt": "sunny_s5",
+    "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt":   "sunny9577",
+    "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/socks4_proxies.txt": "sunny_s4",
+    # HyperBeats
+    "https://raw.githubusercontent.com/HyperBeats/proxy-list/main/socks5.txt": "hyper_s5",
+    "https://raw.githubusercontent.com/HyperBeats/proxy-list/main/socks4.txt": "hyper_s4",
+    "https://raw.githubusercontent.com/HyperBeats/proxy-list/main/http.txt":   "hyper_http",
+    # Zaeem20
+    "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/socks5.txt": "zaeem_s5",
+    "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/socks4.txt": "zaeem_s4",
+    "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/http.txt":   "zaeem_http",
+    "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/https.txt":  "zaeem_https",
+    # KangProxy
+    "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/socks5/socks5.txt": "kang_s5",
+    "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/socks4/socks4.txt": "kang_s4",
+    "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/https/https.txt":   "kang_http",
+    "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/http/http.txt":     "kang_http",
+    # ALIILAPRO
+    "https://raw.githubusercontent.com/ALIILAPRO/Proxy/main/socks5.txt": "alii_s5",
+    "https://raw.githubusercontent.com/ALIILAPRO/Proxy/main/socks4.txt": "alii_s4",
+    "https://raw.githubusercontent.com/ALIILAPRO/Proxy/main/http.txt":   "alii_http",
+    # casals-ar
+    "https://raw.githubusercontent.com/casals-ar/proxy-list/main/socks5": "casals_s5",
+    "https://raw.githubusercontent.com/casals-ar/proxy-list/main/socks4": "casals_s4",
+    "https://raw.githubusercontent.com/casals-ar/proxy-list/main/http":   "casals_http",
+    # zevtyardt
+    "https://raw.githubusercontent.com/zevtyardt/proxy-list/main/socks5.txt": "zev_s5",
+    "https://raw.githubusercontent.com/zevtyardt/proxy-list/main/socks4.txt": "zev_s4",
+    "https://raw.githubusercontent.com/zevtyardt/proxy-list/main/http.txt":   "zev_http",
+    # RX4096
+    "https://raw.githubusercontent.com/RX4096/proxy-list/main/online/socks5.txt": "rx4096_s5",
+    "https://raw.githubusercontent.com/RX4096/proxy-list/main/online/socks4.txt": "rx4096_s4",
+    "https://raw.githubusercontent.com/RX4096/proxy-list/main/online/http.txt":   "rx4096_http",
+    # ObcbO
+    "https://raw.githubusercontent.com/ObcbO/getproxy/master/file/socks5.txt": "obcbo_s5",
+    "https://raw.githubusercontent.com/ObcbO/getproxy/master/file/socks4.txt": "obcbo_s4",
+    "https://raw.githubusercontent.com/ObcbO/getproxy/master/file/http.txt":   "obcbo_http",
+    # UptimerBot
+    "https://raw.githubusercontent.com/UptimerBot/proxy-list/main/proxies/socks5.txt": "uptimer_s5",
+    "https://raw.githubusercontent.com/UptimerBot/proxy-list/main/proxies/socks4.txt": "uptimer_s4",
+    "https://raw.githubusercontent.com/UptimerBot/proxy-list/main/proxies/http.txt":   "uptimer_http",
+    # caliphdev
+    "https://raw.githubusercontent.com/caliphdev/Proxy-List/master/socks5.txt": "caliph_s5",
+    "https://raw.githubusercontent.com/caliphdev/Proxy-List/master/socks4.txt": "caliph_s4",
+    "https://raw.githubusercontent.com/caliphdev/Proxy-List/master/http.txt":   "caliph_http",
+    # anonym0usWork1221
+    "https://raw.githubusercontent.com/Anonym0usWork1221/Free-Proxies/main/proxy_files/socks5_proxies.txt": "anon_s5",
+    "https://raw.githubusercontent.com/Anonym0usWork1221/Free-Proxies/main/proxy_files/socks4_proxies.txt": "anon_s4",
+    "https://raw.githubusercontent.com/Anonym0usWork1221/Free-Proxies/main/proxy_files/http_proxies.txt":   "anon_http",
+    # yakumo/elliottophellia
+    "https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/socks5/global/socks5_checked.txt": "yakumo_s5",
+    "https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/socks4/global/socks4_checked.txt": "yakumo_s4",
+    "https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/http/global/http_checked.txt":     "yakumo_http",
+    # dpangestuw
+    "https://raw.githubusercontent.com/dpangestuw/Free-Proxy/main/http_proxies.txt":   "dpang_http",
+    "https://raw.githubusercontent.com/dpangestuw/Free-Proxy/main/socks4_proxies.txt": "dpang_s4",
+    "https://raw.githubusercontent.com/dpangestuw/Free-Proxy/main/socks5_proxies.txt": "dpang_s5",
+    # tuanminpay
+    "https://raw.githubusercontent.com/tuanminpay/live-proxy/master/http.txt":   "tuan_http",
+    "https://raw.githubusercontent.com/tuanminpay/live-proxy/master/socks4.txt": "tuan_s4",
+    "https://raw.githubusercontent.com/tuanminpay/live-proxy/master/socks5.txt": "tuan_s5",
+    # proxy4parsing
+    "https://raw.githubusercontent.com/proxy4parsing/proxy-list/main/http.txt":    "p4p_http",
+    "https://raw.githubusercontent.com/proxy4parsing/proxy-list/main/hproxy.txt":  "p4p_hproxy",
+    # saschazesiger
+    "https://raw.githubusercontent.com/saschazesiger/Free-Proxies/master/proxies/http.txt":   "sascha_http",
+    "https://raw.githubusercontent.com/saschazesiger/Free-Proxies/master/proxies/socks4.txt": "sascha_s4",
+    "https://raw.githubusercontent.com/saschazesiger/Free-Proxies/master/proxies/socks5.txt": "sascha_s5",
+    # r00tee
+    "https://raw.githubusercontent.com/r00tee/Proxy-List/main/Https.txt":  "r00t_http",
+    "https://raw.githubusercontent.com/r00tee/Proxy-List/main/Socks4.txt": "r00t_s4",
+    "https://raw.githubusercontent.com/r00tee/Proxy-List/main/Socks5.txt": "r00t_s5",
+    # lalifeier
+    "https://raw.githubusercontent.com/lalifeier/proxy-list/main/http.txt":   "lali_http",
+    "https://raw.githubusercontent.com/lalifeier/proxy-list/main/socks4.txt": "lali_s4",
+    "https://raw.githubusercontent.com/lalifeier/proxy-list/main/socks5.txt": "lali_s5",
+    # vakhov
+    "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/http.txt":   "vakhov_http",
+    "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/socks5.txt": "vakhov_s5",
+    # manuGMG
+    "https://raw.githubusercontent.com/manuGMG/proxy-365/main/HTTP.txt":   "manu_http",
+    "https://raw.githubusercontent.com/manuGMG/proxy-365/main/SOCKS4.txt": "manu_s4",
+    "https://raw.githubusercontent.com/manuGMG/proxy-365/main/SOCKS5.txt": "manu_s5",
+    # saisuiu Chinese
+    "https://raw.githubusercontent.com/saisuiu/Lionkings-Http-Proxys-Proxies/main/cnfree.txt": "saisuiu_cn",
+    # sunny9577 socks4
+    "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/socks4_proxies.txt": "sunny_s4",
+    # UserR3X
+    "https://raw.githubusercontent.com/UserR3X/proxy-list/main/online/http.txt":   "userr3x_http",
+    "https://raw.githubusercontent.com/UserR3X/proxy-list/main/online/socks4.txt": "userr3x_s4",
+    "https://raw.githubusercontent.com/UserR3X/proxy-list/main/online/socks5.txt": "userr3x_s5",
+    # Vann-Dev
+    "https://raw.githubusercontent.com/Vann-Dev/proxy-list/main/proxies/http.txt":   "vanndev_http",
+    "https://raw.githubusercontent.com/Vann-Dev/proxy-list/main/proxies/socks4.txt": "vanndev_s4",
+    "https://raw.githubusercontent.com/Vann-Dev/proxy-list/main/proxies/socks5.txt": "vanndev_s5",
+    # im-razvan
+    "https://raw.githubusercontent.com/im-razvan/proxy_list/main/http.txt":   "razvan_http",
+    "https://raw.githubusercontent.com/im-razvan/proxy_list/main/socks4.txt": "razvan_s4",
+    "https://raw.githubusercontent.com/im-razvan/proxy_list/main/socks5.txt": "razvan_s5",
+    # MrMarble
+    "https://raw.githubusercontent.com/MrMarble/proxy-list/main/all.txt": "mrmarble",
+    # themiralay
+    "https://raw.githubusercontent.com/themiralay/Proxy-List-World/master/data.txt": "miralay",
+    # a2u
+    "https://raw.githubusercontent.com/a2u/free-proxy-list/master/free-proxy-list.txt": "a2u",
+    # proxyspace GitHub mirror
+    "https://raw.githubusercontent.com/proxyspace/proxyspace/master/http.txt":   "prxspace_http",
+    "https://raw.githubusercontent.com/proxyspace/proxyspace/master/socks4.txt": "prxspace_s4",
+    "https://raw.githubusercontent.com/proxyspace/proxyspace/master/socks5.txt": "prxspace_s5",
+}
+
 SOURCES = [
     # ── TheSpeedX PROXY-List (huge, updated frequently) ───────────────────
     ("http",   "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt"),
@@ -468,11 +657,13 @@ def _parse_lines_with_scheme(text):
 
 
 def fetch_candidates(known_addrs):
-    candidates = []
+    candidates = []  # list of (scheme, addr, source_key)
     for scheme, url in SOURCES:
+        src_key = URL_TO_SOURCE.get(url, "keeper")
         try:
             body = _http_get(url)
-            candidates.extend(_parse_lines(scheme, body))
+            for s, a in _parse_lines(scheme, body):
+                candidates.append((s, a, src_key))
         except Exception:
             pass
 
@@ -482,7 +673,8 @@ def fetch_candidates(known_addrs):
                "?request=displayproxies&protocol=all"
                "&timeout=10000&country=all&proxy_format=protocolipport&format=text")
         body = _http_get(url, 45)
-        candidates.extend(_parse_lines_with_scheme(body))
+        for s, a in _parse_lines_with_scheme(body):
+            candidates.append((s, a, "proxyscrape"))
     except Exception:
         pass
 
@@ -493,7 +685,8 @@ def fetch_candidates(known_addrs):
                    f"?request=displayproxies&protocol={proto}"
                    f"&timeout=20000&country=all&proxy_format=ipport&format=text")
             body = _http_get(url, 30)
-            candidates.extend(_parse_lines(proto, body))
+            for s, a in _parse_lines(proto, body):
+                candidates.append((s, a, "proxyscrape"))
         except Exception:
             pass
         # Elite + fast subset (more likely to bypass Ynet detection)
@@ -502,14 +695,16 @@ def fetch_candidates(known_addrs):
                    f"?request=getproxies&protocol={proto}"
                    f"&timeout=1000&country=all&ssl=all&anonymity=elite")
             body = _http_get(url, 15)
-            candidates.extend(_parse_lines(proto, body))
+            for s, a in _parse_lines(proto, body):
+                candidates.append((s, a, "proxyscrape"))
         except Exception:
             pass
 
     # fate0/proxylist — JSON-per-line format with host/port/type fields
     try:
         f0 = _fetch_fate0()
-        candidates.extend(f0)
+        for s, a in f0:
+            candidates.append((s, a, "fate0_proxylist"))
         log(f"  fate0/proxylist: {len(f0)} candidates")
     except Exception:
         pass
@@ -517,7 +712,8 @@ def fetch_candidates(known_addrs):
     # checkerproxy.net — pre-verified daily archive (highest-quality free source)
     try:
         cp = _fetch_checkerproxy_keeper()
-        candidates.extend(cp)
+        for s, a in cp:
+            candidates.append((s, a, "checkerproxy"))
         log(f"  checkerproxy.net: {len(cp)} candidates")
     except Exception:
         pass
@@ -525,7 +721,8 @@ def fetch_candidates(known_addrs):
     # geoxy.io — elite-only verified proxies via floppydata.com API token
     try:
         gx = _fetch_geoxy()
-        candidates.extend(gx)
+        for s, a in gx:
+            candidates.append((s, a, "geoxy.io"))
         log(f"  geoxy.io (elite): {len(gx)} candidates")
     except Exception:
         pass
@@ -544,17 +741,17 @@ def fetch_candidates(known_addrs):
                 r"<td>\s*(\d{1,3}(?:\.\d{1,3}){3})\s*</td>\s*<td>\s*(\d{2,5})\s*</td>",
                 body)
             for ip, port in pairs:
-                candidates.append(("http", f"{ip}:{port}"))
+                candidates.append(("http", f"{ip}:{port}", "freeproxylist"))
         except Exception:
             pass
     log(f"  free-proxy-list.net/en/: scraped")
 
     seen = set(known_addrs)
     fresh = []
-    for s, a in candidates:
+    for s, a, src in candidates:
         if a not in seen:
             seen.add(a)
-            fresh.append((s, a))
+            fresh.append((s, a, src))
     return fresh
 
 
@@ -610,6 +807,7 @@ def probe_all(candidates, targets, used_addrs, on_flush, prev_alive=None):
     Calls on_flush(hits, tested_addrs, prev_alive) every FLUSH_EVERY hits.
     hits = proxies that reached Ynet (any HTTP response, regardless of vote_ok).
     tested_addrs = every address probed so far (hit or miss).
+    candidates = list of (scheme, addr, source_key) 3-tuples.
     """
     hits = []
     tested_addrs = set()
@@ -620,13 +818,16 @@ def probe_all(candidates, targets, used_addrs, on_flush, prev_alive=None):
 
     def _probe(item):
         nonlocal done, last_flush
-        scheme, addr = item
+        scheme, addr, src_key = item
         rec = probe_one(scheme, addr, targets, used_addrs)
         with lock:
             done_val = done + 1
             done = done_val
             tested_addrs.add(addr)
             if rec:
+                # Tag probe result with the source key from fetch
+                if not rec.get("source") and src_key:
+                    rec["source"] = src_key
                 hits.append(rec)
                 if len(hits) - last_flush >= FLUSH_EVERY:
                     last_flush = len(hits)
@@ -747,7 +948,8 @@ def run_cycle(cycle_num):
     # Re-probe a sample of existing entries + all new candidates
     resample = random.sample(master, min(RESAMPLE_SIZE, len(master)))
     resampled_addrs = {p["addr"] for p in resample}
-    resample_pairs = [(p["scheme"], p["addr"]) for p in resample]
+    # 3-tuples: (scheme, addr, source_key)
+    resample_pairs = [(p["scheme"], p["addr"], p.get("source", "keeper")) for p in resample]
 
     master_by_addr = {p["addr"]: p for p in master}
     already_queued = set(resampled_addrs)
@@ -756,14 +958,14 @@ def run_cycle(cycle_num):
     alive_to_probe = []
     for p in prev_alive:
         if p["addr"] not in already_queued:
-            alive_to_probe.append((p["scheme"], p["addr"]))
+            alive_to_probe.append((p["scheme"], p["addr"], p.get("source", "keeper")))
             already_queued.add(p["addr"])
     if alive_to_probe:
         log(f"  +{len(alive_to_probe)} alive.json proxies added to probe")
 
     # Always probe every currently-used proxy too.
     used_to_probe = [
-        (master_by_addr[a]["scheme"], a)
+        (master_by_addr[a]["scheme"], a, master_by_addr[a].get("source", "keeper"))
         for a in used_addrs
         if a in master_by_addr and a not in already_queued
     ]
@@ -811,7 +1013,8 @@ def run_cycle(cycle_num):
             kept.append(merged_entry)
 
     new_entries = [h for h in hits if h["addr"] not in known_addrs]
-    # Tag new entries found by keeper with "keeper" source so they can be scored
+    # Ensure every new entry has a source tag — use specific URL source if set,
+    # otherwise fall back to "keeper" (meaning found during keeper's fetch cycle)
     for h in new_entries:
         if not h.get("source"):
             h["source"] = "keeper"
