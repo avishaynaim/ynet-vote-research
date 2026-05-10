@@ -92,10 +92,11 @@ URL_TO_SOURCE = {
     "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/socks4.txt": "ercin_s4",
     "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/socks5.txt": "ercin_s5",
     # proxifly
-    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/all/data.txt":           "proxifly",
-    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt":   "proxifly_http",
-    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks4/data.txt": "proxifly_s4",
-    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.txt": "proxifly_s5",
+    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/all/data.txt":            "proxifly",
+    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt":  "proxifly_http",
+    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/https/data.txt": "proxifly_https",
+    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks4/data.txt":"proxifly_s4",
+    "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.txt":"proxifly_s5",
     # hookzof
     "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt": "hookzof_s5",
     # prxchk
@@ -215,6 +216,7 @@ URL_TO_SOURCE = {
     "https://raw.githubusercontent.com/lalifeier/proxy-list/main/socks5.txt": "lali_s5",
     # vakhov
     "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/http.txt":   "vakhov_http",
+    "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/socks4.txt": "vakhov_s4",
     "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/socks5.txt": "vakhov_s5",
     # manuGMG
     "https://raw.githubusercontent.com/manuGMG/proxy-365/main/HTTP.txt":   "manu_http",
@@ -383,6 +385,7 @@ SOURCES = [
     ("socks5", "https://raw.githubusercontent.com/saschazesiger/Free-Proxies/master/proxies/socks5.txt"),
     # ── proxifly by protocol (separate from /all endpoint) ───────────────────
     ("http",   "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt"),
+    ("http",   "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/https/data.txt"),
     ("socks4", "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks4/data.txt"),
     ("socks5", "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.txt"),
     # ── r00tee ────────────────────────────────────────────────────────────────
@@ -395,6 +398,7 @@ SOURCES = [
     ("socks5", "https://raw.githubusercontent.com/lalifeier/proxy-list/main/socks5.txt"),
     # ── vakhov fresh list ────────────────────────────────────────────────────
     ("http",   "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/socks4.txt"),
     ("socks5", "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/socks5.txt"),
     # ── manuGMG ──────────────────────────────────────────────────────────────
     ("http",   "https://raw.githubusercontent.com/manuGMG/proxy-365/main/HTTP.txt"),
@@ -925,7 +929,7 @@ def flush_alive(hits, tested_addrs=None, prev_alive=None):
     or a confirmed miss (dropped). By cycle end alive.json converges to only
     the addresses confirmed alive in the current cycle.
     """
-    # Enrich hits with source tags from master_pool where the hit lacks one
+    # Enrich hits AND prev_alive carry-overs with source tags from master_pool
     try:
         master_src = json.load(open(MASTER))
         _src_map = {p["addr"]: p.get("source") for p in master_src if p.get("addr") and p.get("source")}
@@ -933,7 +937,7 @@ def flush_alive(hits, tested_addrs=None, prev_alive=None):
             if not h.get("source") and h.get("addr") in _src_map:
                 h["source"] = _src_map[h["addr"]]
     except Exception:
-        pass
+        _src_map = {}
 
     merged = list(hits)  # confirmed alive in current cycle so far
 
@@ -941,6 +945,9 @@ def flush_alive(hits, tested_addrs=None, prev_alive=None):
         hit_addrs = {h["addr"] for h in hits}
         for p in prev_alive:
             if p["addr"] not in tested_addrs and p["addr"] not in hit_addrs:
+                # Enrich carried-over entry with source tag if missing
+                if not p.get("source") and p.get("addr") in _src_map:
+                    p = {**p, "source": _src_map[p["addr"]]}
                 merged.append(p)
 
     if len(merged) < MIN_SURVIVORS:
@@ -1077,9 +1084,12 @@ def run_cycle(cycle_num):
         if p["addr"] not in resampled_addrs:
             kept.append(p)
         elif p["addr"] in hit_addrs:
-            # Merge probe result with original entry to preserve source tag
-            merged_entry = dict(hit_map[p["addr"]])
-            if p.get("source") and not merged_entry.get("source"):
+            # Merge: original entry fields first, probe result fields override.
+            # This preserves source tag and any other original metadata that
+            # probe_one() does not set (e.g. country, tags added by harvest).
+            merged_entry = {**p, **hit_map[p["addr"]]}
+            # Ensure source is never lost — original wins if probe result has none
+            if p.get("source") and not hit_map[p["addr"]].get("source"):
                 merged_entry["source"] = p["source"]
             kept.append(merged_entry)
 

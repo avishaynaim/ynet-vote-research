@@ -187,6 +187,7 @@ GITHUB_SOURCES = [
     ("volo_http",      "http",   "https://raw.githubusercontent.com/Volodichev/proxy-list/main/http.txt"),
     # ── proxifly by protocol ──
     ("proxifly_http",  "http",   "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt"),
+    ("proxifly_https", "http",   "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/https/data.txt"),
     ("proxifly_s4",    "socks4", "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks4/data.txt"),
     ("proxifly_s5",    "socks5", "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.txt"),
     # ── sunny9577 socks ──
@@ -259,6 +260,7 @@ GITHUB_SOURCES = [
     ("miralay",        "http",   "https://raw.githubusercontent.com/themiralay/Proxy-List-World/master/data.txt"),
     # ── vakhov fresh list ──
     ("vakhov_http",    "http",   "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/http.txt"),
+    ("vakhov_s4",      "socks4", "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/socks4.txt"),
     ("vakhov_s5",      "socks5", "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/socks5.txt"),
     # ── saisuiu Chinese proxies ──
     ("saisuiu_cn",     "http",   "https://raw.githubusercontent.com/saisuiu/Lionkings-Http-Proxys-Proxies/main/cnfree.txt"),
