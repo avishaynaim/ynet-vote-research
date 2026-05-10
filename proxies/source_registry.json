@@ -2144,5 +2144,47 @@
     "last_harvested": "2026-05-10T16:18:20.885633+00:00",
     "last_result": null,
     "reset_count": 0
+  },
+  "roma8ok_http": {
+    "url": "https://raw.githubusercontent.com/roma8ok/proxy-list/main/proxy-list-http.txt",
+    "scheme": "http",
+    "category": "github",
+    "score": 0,
+    "harvested": 0,
+    "probe_hits": 0,
+    "tested": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "last_harvested": null,
+    "last_result": null,
+    "reset_count": 0
+  },
+  "roma8ok_s5": {
+    "url": "https://raw.githubusercontent.com/roma8ok/proxy-list/main/proxy-list-socks5.txt",
+    "scheme": "socks5",
+    "category": "github",
+    "score": 0,
+    "harvested": 0,
+    "probe_hits": 0,
+    "tested": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "last_harvested": null,
+    "last_result": null,
+    "reset_count": 0
+  },
+  "sunny_all": {
+    "url": "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/proxies.txt",
+    "scheme": "http",
+    "category": "github",
+    "score": 0,
+    "harvested": 0,
+    "probe_hits": 0,
+    "tested": 0,
+    "succeeded": 0,
+    "failed": 0,
+    "last_harvested": null,
+    "last_result": null,
+    "reset_count": 0
   }
 }

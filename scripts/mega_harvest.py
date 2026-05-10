@@ -270,6 +270,11 @@ GITHUB_SOURCES = [
     ("proxylto_http",  "http",   "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/http.txt"),
     ("proxylto_s5",    "socks5", "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/socks5.txt"),
     ("proxylto_s4",    "socks4", "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/socks4.txt"),
+    # ── roma8ok (931 http + 134 socks5 verified in cycle 9) ──
+    ("roma8ok_http",   "http",   "https://raw.githubusercontent.com/roma8ok/proxy-list/main/proxy-list-http.txt"),
+    ("roma8ok_s5",     "socks5", "https://raw.githubusercontent.com/roma8ok/proxy-list/main/proxy-list-socks5.txt"),
+    # ── sunny9577 combined proxies.txt (all protocols, 1513 IPs, overlaps generated/) ──
+    ("sunny_all",      "http",   "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/proxies.txt"),
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1117,9 +1122,9 @@ def main():
     ap = argparse.ArgumentParser(description="Mega Proxy Harvester")
     ap.add_argument("--loops", type=int, default=1,
                     help="Number of fetch→probe cycles (0 = infinite)")
-    ap.add_argument("--concurrency", type=int, default=120,
-                    help="Async probe concurrency (default 120)")
-    ap.add_argument("--timeout", type=float, default=8.0,
+    ap.add_argument("--concurrency", type=int, default=200,
+                    help="Async probe concurrency (default 200)")
+    ap.add_argument("--timeout", type=float, default=6.0,
                     help="Ynet probe timeout in seconds")
     ap.add_argument("--ip-timeout", type=float, default=5.0,
                     help="ipify lookup timeout")

@@ -254,6 +254,11 @@ URL_TO_SOURCE = {
     "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/http.txt":   "proxylto_http",
     "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/socks5.txt": "proxylto_s5",
     "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/socks4.txt": "proxylto_s4",
+    # roma8ok (931 http + 134 socks5 verified in cycle 9)
+    "https://raw.githubusercontent.com/roma8ok/proxy-list/main/proxy-list-http.txt":   "roma8ok_http",
+    "https://raw.githubusercontent.com/roma8ok/proxy-list/main/proxy-list-socks5.txt": "roma8ok_s5",
+    # sunny9577 combined proxies.txt (all protocols, 1513 IPs)
+    "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/proxies.txt": "sunny_all",
 }
 
 SOURCES = [
@@ -431,6 +436,11 @@ SOURCES = [
     ("http",   "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/http.txt"),
     ("socks5", "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/socks5.txt"),
     ("socks4", "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/socks4.txt"),
+    # ── roma8ok (931 http + 134 socks5, validated cycle 9) ───────────────────
+    ("http",   "https://raw.githubusercontent.com/roma8ok/proxy-list/main/proxy-list-http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/roma8ok/proxy-list/main/proxy-list-socks5.txt"),
+    # ── sunny9577 combined proxies.txt (1513 IPs all protocols) ──────────────
+    ("http",   "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/proxies.txt"),
 ]
 
 # ── Additional live API sources (fetched directly, not from GitHub) ─────────
