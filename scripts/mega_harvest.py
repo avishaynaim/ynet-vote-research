@@ -262,6 +262,14 @@ GITHUB_SOURCES = [
     ("vakhov_s5",      "socks5", "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/socks5.txt"),
     # ── saisuiu Chinese proxies ──
     ("saisuiu_cn",     "http",   "https://raw.githubusercontent.com/saisuiu/Lionkings-Http-Proxys-Proxies/main/cnfree.txt"),
+    # ── saisuiu free list (broader pool, different from cnfree.txt) ──
+    ("saisuiu_free",   "http",   "https://raw.githubusercontent.com/saisuiu/Lionkings-Http-Proxys-Proxies/main/free.txt"),
+    # ── mmpx12 https (separate pool from http.txt) ──
+    ("mmpx12_https",   "http",   "https://raw.githubusercontent.com/mmpx12/proxy-list/master/https.txt"),
+    # ── proxylist-to (tested 749 http + 195 s5 + 260 s4) ──
+    ("proxylto_http",  "http",   "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/http.txt"),
+    ("proxylto_s5",    "socks5", "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/socks5.txt"),
+    ("proxylto_s4",    "socks4", "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/socks4.txt"),
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -343,12 +351,14 @@ def fetch_proxyscrape_api():
     return out
 
 
-def fetch_proxyscrape_country():
+def fetch_proxyscrape_country(sm=None):
     """Fetch proxies from top-yield countries via proxyscrape API.
 
     Countries chosen for highest free-proxy volume: CN, RU, VN, BR, IN.
     Fetches http + socks5 per country (10 parallel calls) to find IPs not in
     the global all-country results (country pools often differ from global dumps).
+
+    Returns dict of {source_key: [(scheme, addr), ...]} for per-key harvest tracking.
     """
     TOP_COUNTRIES = ["CN", "RU", "VN", "BR", "IN"]
     tasks = []
@@ -357,25 +367,39 @@ def fetch_proxyscrape_country():
             url = (f"https://api.proxyscrape.com/v2/"
                    f"?request=getproxies&protocol={proto}"
                    f"&country={cc}&timeout=10000&ssl=all&anonymity=all")
-            tasks.append((proto, url))
+            src_key = f"proxyscrape_{cc}_{proto[:4]}"
+            tasks.append((src_key, proto, url))
 
-    out = []
-    def _fetch(proto_url):
-        proto, url = proto_url
+    # Register each per-country-protocol source
+    if sm:
+        for src_key, proto, url in tasks:
+            sm.ensure_source(src_key, url=url, scheme=proto, category="api")
+
+    per_key: dict = {}
+    def _fetch(task):
+        src_key, proto, url = task
         try:
             body = http_get(url, 20)
-            return parse_lines(proto, body)
+            return src_key, parse_lines(proto, body)
         except Exception:
-            return []
+            return src_key, []
 
     with ThreadPoolExecutor(max_workers=10) as ex:
         futs = [ex.submit(_fetch, t) for t in tasks]
         for fut in as_completed(futs):
             try:
-                out.extend(fut.result())
+                src_key, result = fut.result()
+                per_key[src_key] = per_key.get(src_key, []) + result
             except Exception:
                 pass
-    return out
+
+    # Record harvest counts per key
+    if sm:
+        for src_key, proxies in per_key.items():
+            if proxies:
+                sm.record_harvest(src_key, len(proxies))
+
+    return per_key
 
 
 def fetch_geoxy():
@@ -728,7 +752,6 @@ def gather_all(sm=None):
             sm.ensure_source(name, url=url, scheme=scheme, category="github")
         for api_name, url in [
             ("proxyscrape",         "https://api.proxyscrape.com"),
-            ("proxyscrape_country", "https://api.proxyscrape.com/v2/?request=getproxies&country=CN"),
             ("geonode",             "https://proxylist.geonode.com"),
             ("proxy-list.download", "https://www.proxy-list.download"),
             ("openproxy.space",     "https://api.openproxy.space"),
@@ -744,28 +767,31 @@ def gather_all(sm=None):
         ]:
             sm.ensure_source(api_name, url=url, scheme="mixed", category="api")
 
+    # Per-country proxyscrape keys are registered inside fetch_proxyscrape_country()
+    _country_fut_key = "_proxyscrape_country_"
+
     with ThreadPoolExecutor(max_workers=25) as ex:
         # GitHub sources
         gh_futs = {
             ex.submit(fetch_github_source, name, scheme, url): name
             for name, scheme, url in GITHUB_SOURCES
         }
-        # API sources
+        # API sources — note fetch_proxyscrape_country returns a dict, handled separately
         api_futs = {
-            ex.submit(fetch_proxyscrape_api):      "proxyscrape",
-            ex.submit(fetch_geonode_api):           "geonode",
-            ex.submit(fetch_pld_api):               "proxy-list.download",
-            ex.submit(fetch_openproxy_api):         "openproxy.space",
-            ex.submit(fetch_freeproxylist_scrape):  "freeproxylist.net",
-            ex.submit(fetch_spys_scrape):           "spys.me",
-            ex.submit(fetch_checkerproxy):          "checkerproxy.net",
-            ex.submit(fetch_proxydb):               "proxydb.net",
-            ex.submit(fetch_proxyscan):             "proxyscan.io",
-            ex.submit(fetch_freeproxyworld):        "freeproxy.world",
-            ex.submit(fetch_proxyspace_direct):     "proxyspace.pro",
-            ex.submit(fetch_geoxy):                 "geoxy.io",
-            ex.submit(fetch_fate0):                 "fate0",
-            ex.submit(fetch_proxyscrape_country):   "proxyscrape_country",
+            ex.submit(fetch_proxyscrape_api):                "proxyscrape",
+            ex.submit(fetch_geonode_api):                    "geonode",
+            ex.submit(fetch_pld_api):                        "proxy-list.download",
+            ex.submit(fetch_openproxy_api):                  "openproxy.space",
+            ex.submit(fetch_freeproxylist_scrape):           "freeproxylist.net",
+            ex.submit(fetch_spys_scrape):                    "spys.me",
+            ex.submit(fetch_checkerproxy):                   "checkerproxy.net",
+            ex.submit(fetch_proxydb):                        "proxydb.net",
+            ex.submit(fetch_proxyscan):                      "proxyscan.io",
+            ex.submit(fetch_freeproxyworld):                 "freeproxy.world",
+            ex.submit(fetch_proxyspace_direct):              "proxyspace.pro",
+            ex.submit(fetch_geoxy):                          "geoxy.io",
+            ex.submit(fetch_fate0):                          "fate0",
+            ex.submit(fetch_proxyscrape_country, sm): _country_fut_key,
         }
 
         for fut in as_completed(gh_futs):
@@ -784,18 +810,35 @@ def gather_all(sm=None):
             name = api_futs[fut]
             try:
                 result = fut.result()
-                for scheme, addr in result:
-                    all_candidates.append((name, scheme, addr))
-                per_source[name] = len(result)
-                log(f"  [OK]  {name:<30} {len(result):>6}")
+                if name == _country_fut_key:
+                    # result is a dict: {source_key: [(scheme, addr), ...]}
+                    total_country = 0
+                    for src_key, proxies in result.items():
+                        for scheme, addr in proxies:
+                            all_candidates.append((src_key, scheme, addr))
+                        if proxies:
+                            per_source[src_key] = len(proxies)
+                            total_country += len(proxies)
+                            log(f"  [OK]  {src_key:<30} {len(proxies):>6}")
+                else:
+                    for scheme, addr in result:
+                        all_candidates.append((name, scheme, addr))
+                    per_source[name] = len(result)
+                    log(f"  [OK]  {name:<30} {len(result):>6}")
             except Exception:
                 errors += 1
                 log(f"  [ERR] {name}")
 
     # Fetch from registry-discovered sources not in the hardcoded lists
+    # Per-country proxyscrape keys follow pattern proxyscrape_CC_proto
+    _country_keys = {
+        f"proxyscrape_{cc}_{proto[:4]}"
+        for cc in ["CN", "RU", "VN", "BR", "IN"]
+        for proto in ("http", "socks5")
+    }
     if sm:
-        hardcoded_keys = {name for name, _, _ in GITHUB_SOURCES} | {
-            "proxyscrape", "proxyscrape_country", "geonode", "proxy-list.download",
+        hardcoded_keys = {name for name, _, _ in GITHUB_SOURCES} | _country_keys | {
+            "proxyscrape", "geonode", "proxy-list.download",
             "openproxy.space", "freeproxylist.net", "spys.me", "checkerproxy.net",
             "proxydb.net", "proxyscan.io", "freeproxy.world", "proxyspace.pro",
             "geoxy.io", "fate0",

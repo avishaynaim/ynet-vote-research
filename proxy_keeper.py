@@ -246,6 +246,14 @@ URL_TO_SOURCE = {
     "https://raw.githubusercontent.com/proxyspace/proxyspace/master/http.txt":   "prxspace_http",
     "https://raw.githubusercontent.com/proxyspace/proxyspace/master/socks4.txt": "prxspace_s4",
     "https://raw.githubusercontent.com/proxyspace/proxyspace/master/socks5.txt": "prxspace_s5",
+    # saisuiu free list
+    "https://raw.githubusercontent.com/saisuiu/Lionkings-Http-Proxys-Proxies/main/free.txt": "saisuiu_free",
+    # mmpx12 https
+    "https://raw.githubusercontent.com/mmpx12/proxy-list/master/https.txt": "mmpx12_https",
+    # proxylist-to
+    "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/http.txt":   "proxylto_http",
+    "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/socks5.txt": "proxylto_s5",
+    "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/socks4.txt": "proxylto_s4",
 }
 
 SOURCES = [
@@ -415,6 +423,14 @@ SOURCES = [
     ("http",   "https://raw.githubusercontent.com/proxyspace/proxyspace/master/http.txt"),
     ("socks4", "https://raw.githubusercontent.com/proxyspace/proxyspace/master/socks4.txt"),
     ("socks5", "https://raw.githubusercontent.com/proxyspace/proxyspace/master/socks5.txt"),
+    # ── saisuiu free list (broader pool, different from cnfree.txt) ──────────
+    ("http",   "https://raw.githubusercontent.com/saisuiu/Lionkings-Http-Proxys-Proxies/main/free.txt"),
+    # ── mmpx12 https (separate pool from http.txt) ───────────────────────────
+    ("http",   "https://raw.githubusercontent.com/mmpx12/proxy-list/master/https.txt"),
+    # ── proxylist-to ─────────────────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/socks5.txt"),
+    ("socks4", "https://raw.githubusercontent.com/proxylist-to/proxy-list/main/socks4.txt"),
 ]
 
 # ── Additional live API sources (fetched directly, not from GitHub) ─────────
@@ -658,12 +674,18 @@ def _parse_lines_with_scheme(text):
 
 def fetch_candidates(known_addrs):
     candidates = []  # list of (scheme, addr, source_key)
+    sm = _sm.get()
+
     for scheme, url in SOURCES:
         src_key = URL_TO_SOURCE.get(url, "keeper")
         try:
+            sm.ensure_source(src_key, url=url, scheme=scheme, category="github")
             body = _http_get(url)
-            for s, a in _parse_lines(scheme, body):
+            found = _parse_lines(scheme, body)
+            for s, a in found:
                 candidates.append((s, a, src_key))
+            if found:
+                sm.record_harvest(src_key, len(found))
         except Exception:
             pass
 
@@ -672,9 +694,13 @@ def fetch_candidates(known_addrs):
         url = ("https://api.proxyscrape.com/v3/free-proxy-list/get"
                "?request=displayproxies&protocol=all"
                "&timeout=10000&country=all&proxy_format=protocolipport&format=text")
+        sm.ensure_source("proxyscrape", url="https://api.proxyscrape.com", scheme="mixed", category="api")
         body = _http_get(url, 45)
-        for s, a in _parse_lines_with_scheme(body):
+        found = list(_parse_lines_with_scheme(body))
+        for s, a in found:
             candidates.append((s, a, "proxyscrape"))
+        if found:
+            sm.record_harvest("proxyscrape", len(found))
     except Exception:
         pass
 
@@ -685,8 +711,11 @@ def fetch_candidates(known_addrs):
                    f"?request=displayproxies&protocol={proto}"
                    f"&timeout=20000&country=all&proxy_format=ipport&format=text")
             body = _http_get(url, 30)
-            for s, a in _parse_lines(proto, body):
+            found = _parse_lines(proto, body)
+            for s, a in found:
                 candidates.append((s, a, "proxyscrape"))
+            if found:
+                sm.record_harvest("proxyscrape", len(found))
         except Exception:
             pass
         # Elite + fast subset (more likely to bypass Ynet detection)
@@ -695,39 +724,53 @@ def fetch_candidates(known_addrs):
                    f"?request=getproxies&protocol={proto}"
                    f"&timeout=1000&country=all&ssl=all&anonymity=elite")
             body = _http_get(url, 15)
-            for s, a in _parse_lines(proto, body):
+            found = _parse_lines(proto, body)
+            for s, a in found:
                 candidates.append((s, a, "proxyscrape"))
+            if found:
+                sm.record_harvest("proxyscrape", len(found))
         except Exception:
             pass
 
     # fate0/proxylist — JSON-per-line format with host/port/type fields
     try:
+        sm.ensure_source("fate0_proxylist", url="https://raw.githubusercontent.com/fate0/proxylist/master/proxy.list", scheme="mixed", category="api")
         f0 = _fetch_fate0()
         for s, a in f0:
             candidates.append((s, a, "fate0_proxylist"))
+        if f0:
+            sm.record_harvest("fate0_proxylist", len(f0))
         log(f"  fate0/proxylist: {len(f0)} candidates")
     except Exception:
         pass
 
     # checkerproxy.net — pre-verified daily archive (highest-quality free source)
     try:
+        sm.ensure_source("checkerproxy", url="https://checkerproxy.net/api/archive/", scheme="mixed", category="api")
         cp = _fetch_checkerproxy_keeper()
         for s, a in cp:
             candidates.append((s, a, "checkerproxy"))
+        if cp:
+            sm.record_harvest("checkerproxy", len(cp))
         log(f"  checkerproxy.net: {len(cp)} candidates")
     except Exception:
         pass
 
     # geoxy.io — elite-only verified proxies via floppydata.com API token
     try:
+        sm.ensure_source("geoxy.io", url="https://geoxy.io/proxies", scheme="mixed", category="api")
         gx = _fetch_geoxy()
         for s, a in gx:
             candidates.append((s, a, "geoxy.io"))
+        if gx:
+            sm.record_harvest("geoxy.io", len(gx))
         log(f"  geoxy.io (elite): {len(gx)} candidates")
     except Exception:
         pass
 
     # free-proxy-list.net /en/ — HTML table, 300 per page, different pool
+    sm.ensure_source("freeproxylist", url="https://free-proxy-list.net/en/", scheme="http", category="api")
+    _fpl_count = 0
     for url in [
         "https://free-proxy-list.net/en/",
         "https://free-proxy-list.net/en/?page=2",
@@ -742,9 +785,12 @@ def fetch_candidates(known_addrs):
                 body)
             for ip, port in pairs:
                 candidates.append(("http", f"{ip}:{port}", "freeproxylist"))
+                _fpl_count += 1
         except Exception:
             pass
-    log(f"  free-proxy-list.net/en/: scraped")
+    if _fpl_count:
+        sm.record_harvest("freeproxylist", _fpl_count)
+    log(f"  free-proxy-list.net/en/: scraped ({_fpl_count} found)")
 
     seen = set(known_addrs)
     fresh = []
