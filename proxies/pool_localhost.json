@@ -71291,5 +71291,145 @@
     "exit_ip": null,
     "ynet_ms": 6190,
     "source": "proxifly"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.222:4277",
+    "exit_ip": null,
+    "ynet_ms": 7384,
+    "source": "anon_s5"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.213:6763",
+    "exit_ip": null,
+    "ynet_ms": 1059,
+    "source": "proxifly"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.196:9951",
+    "exit_ip": null,
+    "ynet_ms": 7827,
+    "source": "anon_s5"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.215:12445",
+    "exit_ip": null,
+    "ynet_ms": 7133,
+    "source": "anon_s5"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.220:10594",
+    "exit_ip": null,
+    "ynet_ms": 8223,
+    "source": "anon_s5"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "92.42.102.236:1080",
+    "exit_ip": "92.42.102.236",
+    "ynet_ms": 1899,
+    "source": "monosans_s5"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.227:7000",
+    "exit_ip": null,
+    "ynet_ms": 6688,
+    "source": "proxyscrape"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.211:5018",
+    "exit_ip": "64.227.157.51",
+    "ynet_ms": 5315,
+    "source": "proxyscrape"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.227:4249",
+    "exit_ip": null,
+    "ynet_ms": 4300,
+    "source": "ercin_s5"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.197:6059",
+    "exit_ip": null,
+    "ynet_ms": 7374,
+    "source": "anon_s5"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.225:7912",
+    "exit_ip": null,
+    "ynet_ms": 7697,
+    "source": "anon_s5"
+  },
+  {
+    "scheme": "http",
+    "addr": "103.125.155.230:8080",
+    "exit_ip": null,
+    "ynet_ms": 6130,
+    "source": "ercin_http"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.217:6134",
+    "exit_ip": null,
+    "ynet_ms": 7938,
+    "source": "anon_s5"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.233:10506",
+    "exit_ip": null,
+    "ynet_ms": 4835,
+    "source": "ercin_s5"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.238:4040",
+    "exit_ip": null,
+    "ynet_ms": 5519,
+    "source": "proxyscrape_v3_s5"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.201:34878",
+    "exit_ip": null,
+    "ynet_ms": 4062,
+    "source": "proxyscrape"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.222:8873",
+    "exit_ip": null,
+    "ynet_ms": 6882,
+    "source": "speedx_sockslist_s5"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.182:10771",
+    "exit_ip": null,
+    "ynet_ms": 2051,
+    "source": "alii_s5"
+  },
+  {
+    "scheme": "socks5",
+    "addr": "206.123.156.195:6161",
+    "exit_ip": null,
+    "ynet_ms": 7247,
+    "source": "anon_s5"
+  },
+  {
+    "scheme": "http",
+    "addr": "37.111.53.31:8080",
+    "exit_ip": null,
+    "ynet_ms": 6991,
+    "source": "speedx_http"
   }
 ]
