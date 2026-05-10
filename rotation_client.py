@@ -25,6 +25,7 @@ import traceback
 from datetime import datetime
 
 import requests
+import source_manager as _sm
 
 # ---------------------------------------------------------------------------
 # Argument parsing — must happen before logging so --log-level works
@@ -57,18 +58,18 @@ def parse_args():
         dest="log_level",
         help="Console log verbosity (file always gets DEBUG)",
     )
-    _DEFAULT_PROXIES = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "proxies", "unique_v2.json")
-    if not os.path.exists(_DEFAULT_PROXIES):
-        _DEFAULT_PROXIES = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "proxies", "unique.json")
+    _REPO = os.path.dirname(os.path.abspath(__file__))
+    # Prefer master_pool.json (source-tagged, continuously harvested),
+    # then fall back to legacy unique_v2.json / unique.json
+    for _candidate in ("proxies/master_pool.json", "proxies/unique_v2.json", "proxies/unique.json"):
+        _DEFAULT_PROXIES = os.path.join(_REPO, _candidate)
+        if os.path.exists(_DEFAULT_PROXIES):
+            break
     parser.add_argument(
         "--proxies-file", default=_DEFAULT_PROXIES,
         dest="proxies_file",
         help="JSON list of working proxies ({scheme,addr,...}). "
-             "If present, votes go directly to ynet via rotating proxies. "
-             "Defaults to the repo-tracked unique_v2.json (~860 entries as of "
-             "2026-04-15) and falls back to unique.json (97 entries).",
+             "Defaults to proxies/master_pool.json (source-tagged, live harvest).",
     )
     parser.add_argument(
         "--ynet-base", default="https://www.ynet.co.il",
@@ -239,17 +240,18 @@ def load_proxies(path: str) -> list:
 
 
 def build_source_pool(cfg: dict, log) -> list:
-    """Return list of {label, source_ip, proxy} — real proxies if available, else fake IPs."""
+    """Return list of {label, source_ip, proxy, addr} — real proxies if available, else fake IPs."""
     proxies = cfg.get("proxies") or []
     size    = cfg["pool_size"]
     if proxies:
         pool = proxies[:size]
         log.info("Using %d real proxies from %s", len(pool), cfg.get("proxies_file"))
-        return [{"label": p["label"], "source_ip": p["label"], "proxy": p["proxies"]}
+        return [{"label": p["label"], "source_ip": p["label"],
+                 "proxy": p["proxies"], "addr": p.get("addr", "")}
                 for p in pool]
     fake = build_pool(size)
     log.warning("No proxies — falling back to fake X-Source-IP (will not affect real ynet)")
-    return [{"label": ip, "source_ip": ip, "proxy": None} for ip in fake]
+    return [{"label": ip, "source_ip": ip, "proxy": None, "addr": ""} for ip in fake]
 
 # ---------------------------------------------------------------------------
 # HTTP helpers
@@ -393,7 +395,7 @@ def get_admin_comment(talkback_id: int, cfg: dict, log) -> dict:
 
 def cast_vote(talkback_id: int, source_ip: str, cfg: dict, log,
               like: bool = True, vote_type: str = "2state",
-              cookie: str = None, proxy: dict = None) -> dict:
+              cookie: str = None, proxy: dict = None, proxy_addr: str = "") -> dict:
     action = "LIKE" if like else "UNLIKE"
     log.debug("cast_vote  id=%d  ip=%s  action=%s  vote_type=%s  cookie=%s  proxy=%s",
               talkback_id, source_ip, action, vote_type, cookie,
@@ -438,12 +440,20 @@ def cast_vote(talkback_id: int, source_ip: str, cfg: dict, log,
         "set_cookie": resp.headers.get("Set-Cookie", "—"),
     }
 
-    if resp.status_code == 200:
+    success = (resp.status_code == 200)
+    if success:
         log.debug("cast_vote OK  id=%d  ip=%s  action=%s  set_cookie=%s",
                   talkback_id, source_ip, action, result["set_cookie"])
     else:
         log.warning("cast_vote REJECTED  id=%d  ip=%s  action=%s  status=%s  body=%s",
                     talkback_id, source_ip, action, resp.status_code, result["body"])
+
+    # Update source score based on real YNET result
+    if proxy_addr:
+        try:
+            _sm.get().record_result(proxy_addr, success)
+        except Exception:
+            pass
 
     return result
 
@@ -530,7 +540,7 @@ def test_boost_top_comment(cfg: dict, log, targets: dict):
     for idx, src in enumerate(pool, 1):
         ip = src["label"]
         try:
-            r     = cast_vote(tid, src["source_ip"], cfg, log, like=True, proxy=src["proxy"])
+            r     = cast_vote(tid, src["source_ip"], cfg, log, like=True, proxy=src["proxy"], proxy_addr=src.get("addr",""))
             stats = get_admin_comment(tid, cfg, log)
             log.info("TEST A  [%d/%d]  ip=%s  http=%d  likes=%d  set_cookie=%s",
                      idx, len(pool), ip, r["status"], stats["likes"], r["set_cookie"])
@@ -573,7 +583,7 @@ def test_suppress_comment(cfg: dict, log, targets: dict):
     for idx, src in enumerate(pool, 1):
         ip = src["label"]
         try:
-            r = cast_vote(tid, src["source_ip"], cfg, log, like=False, proxy=src["proxy"])
+            r = cast_vote(tid, src["source_ip"], cfg, log, like=False, proxy=src["proxy"], proxy_addr=src.get("addr",""))
             log.info("TEST B  [%d/%d]  ip=%s  http=%d  set_cookie=%s",
                      idx, len(pool), ip, r["status"], r["set_cookie"])
         except Exception as exc:
@@ -616,7 +626,7 @@ def test_manufacture_zero_comment(cfg: dict, log, targets: dict):
     for idx, src in enumerate(pool, 1):
         ip = src["label"]
         try:
-            r = cast_vote(tid, src["source_ip"], cfg, log, like=True, proxy=src["proxy"])
+            r = cast_vote(tid, src["source_ip"], cfg, log, like=True, proxy=src["proxy"], proxy_addr=src.get("addr",""))
             log.info("TEST C  [%d/%d]  ip=%s  http=%d  set_cookie=%s",
                      idx, len(pool), ip, r["status"], r["set_cookie"])
         except Exception as exc:
@@ -645,13 +655,13 @@ def test_dedup_still_works(cfg: dict, log, targets: dict):
 
     log.info("TEST D  target=%d  ip=%s", tid, ip)
 
-    r1 = cast_vote(tid, src["source_ip"], cfg, log, like=True, proxy=proxy)
+    r1 = cast_vote(tid, src["source_ip"], cfg, log, like=True, proxy=proxy, proxy_addr=src.get("addr",""))
     s1 = get_admin_comment(tid, cfg, log)
     log.info("TEST D  vote 1  ip=%s  http=%d  likes=%d  set_cookie=%s",
              ip, r1["status"], s1["likes"], r1["set_cookie"])
     print(f"\nVote 1 from {ip}: HTTP {r1['status']} → likes={s1['likes']}")
 
-    r2 = cast_vote(tid, src["source_ip"], cfg, log, like=True, proxy=proxy)
+    r2 = cast_vote(tid, src["source_ip"], cfg, log, like=True, proxy=proxy, proxy_addr=src.get("addr",""))
     s2 = get_admin_comment(tid, cfg, log)
     changed = s2["likes"] != s1["likes"]
     log.info("TEST D  vote 2  ip=%s  http=%d  likes=%d  set_cookie=%s  count_changed=%s",
@@ -710,7 +720,7 @@ def targeted_campaign(cfg: dict, log, target_id: int, count: int, like: bool):
     for idx, src in enumerate(pool, 1):
         ip = src["label"]
         try:
-            r = cast_vote(target_id, src["source_ip"], cfg, log, like=like, proxy=src["proxy"])
+            r = cast_vote(target_id, src["source_ip"], cfg, log, like=like, proxy=src["proxy"], proxy_addr=src.get("addr",""))
             after_live = get_admin_comment(target_id, cfg, log)
             status = r["status"]
             if status == 200:

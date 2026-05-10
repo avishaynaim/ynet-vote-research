@@ -35,6 +35,9 @@ from datetime import datetime
 import aiohttp
 from aiohttp_socks import ProxyConnector
 
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import source_manager as _sm
+
 # ─── Paths ─────────────────────────────────────────────────────────────────
 REPO       = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 MASTER     = os.path.join(REPO, "proxies", "master_pool.json")
@@ -300,6 +303,16 @@ def fetch_github_source(name, scheme, url):
 
 def fetch_proxyscrape_api():
     out = []
+    # All-protocol endpoint — single call returns 7k+ proxies with scheme:// prefix
+    # This uses proxy_format=protocolipport so each line is e.g. socks5://1.2.3.4:1080
+    try:
+        url = ("https://api.proxyscrape.com/v3/free-proxy-list/get"
+               "?request=displayproxies&protocol=all"
+               "&timeout=10000&country=all&proxy_format=protocolipport&format=text")
+        body = http_get(url, 45)
+        out.extend(parse_lines("http", body))  # parse_lines handles scheme:// prefixes
+    except Exception:
+        pass
     for proto in ("http", "socks4", "socks5"):
         # Standard bulk fetch (all proxies, broad timeout)
         for version in ("v2", "v3"):
@@ -578,10 +591,31 @@ def fetch_freeproxyworld():
 #  GATHER ALL CANDIDATES
 # ═══════════════════════════════════════════════════════════════════════════
 
-def gather_all():
-    """Fetch from all sources in parallel, return list of (scheme, addr)."""
-    all_candidates = []
+def gather_all(sm=None):
+    """Fetch from all sources in parallel, return list of (source_key, scheme, addr)."""
+    all_candidates = []   # [(source_key, scheme, addr), ...]
+    per_source: dict[str, int] = {}
     errors = 0
+
+    # Register all known sources in the registry
+    if sm:
+        for name, scheme, url in GITHUB_SOURCES:
+            sm.ensure_source(name, url=url, scheme=scheme, category="github")
+        for api_name, url in [
+            ("proxyscrape",         "https://api.proxyscrape.com"),
+            ("geonode",             "https://proxylist.geonode.com"),
+            ("proxy-list.download", "https://www.proxy-list.download"),
+            ("openproxy.space",     "https://api.openproxy.space"),
+            ("freeproxylist.net",   "https://free-proxy-list.net"),
+            ("spys.me",             "https://spys.me"),
+            ("checkerproxy.net",    "https://checkerproxy.net"),
+            ("proxydb.net",         "https://proxydb.net"),
+            ("proxyscan.io",        "https://www.proxyscan.io"),
+            ("freeproxy.world",     "https://freeproxy.world"),
+            ("proxyspace.pro",      "https://proxyspace.pro"),
+            ("geoxy.io",            "https://geoxy.io"),
+        ]:
+            sm.ensure_source(api_name, url=url, scheme="mixed", category="api")
 
     with ThreadPoolExecutor(max_workers=25) as ex:
         # GitHub sources
@@ -597,22 +631,23 @@ def gather_all():
             ex.submit(fetch_openproxy_api):         "openproxy.space",
             ex.submit(fetch_freeproxylist_scrape):  "freeproxylist.net",
             ex.submit(fetch_spys_scrape):           "spys.me",
-            # Higher-quality / pre-verified sources
             ex.submit(fetch_checkerproxy):          "checkerproxy.net",
             ex.submit(fetch_proxydb):               "proxydb.net",
             ex.submit(fetch_proxyscan):             "proxyscan.io",
             ex.submit(fetch_freeproxyworld):        "freeproxy.world",
             ex.submit(fetch_proxyspace_direct):     "proxyspace.pro",
-            ex.submit(fetch_geoxy):                  "geoxy.io (elite)",
+            ex.submit(fetch_geoxy):                 "geoxy.io",
         }
 
         for fut in as_completed(gh_futs):
             name = gh_futs[fut]
             try:
                 result = fut.result()
-                all_candidates.extend(result)
+                for scheme, addr in result:
+                    all_candidates.append((name, scheme, addr))
+                per_source[name] = len(result)
                 if result:
-                    log(f"  [OK]  {name:<22} {len(result):>6}")
+                    log(f"  [OK]  {name:<30} {len(result):>6}")
             except Exception:
                 errors += 1
 
@@ -620,24 +655,64 @@ def gather_all():
             name = api_futs[fut]
             try:
                 result = fut.result()
-                all_candidates.extend(result)
-                log(f"  [OK]  {name:<22} {len(result):>6}")
+                for scheme, addr in result:
+                    all_candidates.append((name, scheme, addr))
+                per_source[name] = len(result)
+                log(f"  [OK]  {name:<30} {len(result):>6}")
             except Exception:
                 errors += 1
                 log(f"  [ERR] {name}")
 
+    # Fetch from registry-discovered sources not in the hardcoded lists
+    if sm:
+        hardcoded_keys = {name for name, _, _ in GITHUB_SOURCES} | {
+            "proxyscrape", "geonode", "proxy-list.download", "openproxy.space",
+            "freeproxylist.net", "spys.me", "checkerproxy.net", "proxydb.net",
+            "proxyscan.io", "freeproxy.world", "proxyspace.pro", "geoxy.io",
+        }
+        discovered = [
+            (key, info["url"], info.get("scheme", "http"))
+            for key, info in sm.ranked_sources()
+            if key not in hardcoded_keys and info.get("url") and info.get("score", 0) >= 0
+        ]
+        if discovered:
+            log(f"  Fetching {len(discovered)} registry-discovered sources...")
+            with ThreadPoolExecutor(max_workers=min(20, len(discovered))) as disc_ex:
+                disc_futs2 = {
+                    disc_ex.submit(fetch_github_source, key, scheme, url): key
+                    for key, url, scheme in discovered
+                }
+                for fut in as_completed(disc_futs2):
+                    key = disc_futs2[fut]
+                    try:
+                        result = fut.result()
+                        if result:
+                            for scheme, addr in result:
+                                all_candidates.append((key, scheme, addr))
+                            per_source[key] = len(result)
+                            log(f"  [OK]  {key:<30} {len(result):>6}  (discovered)")
+                    except Exception:
+                        pass
+
+    # Update harvest counts in registry
+    if sm:
+        for key, count in per_source.items():
+            if count > 0:
+                sm.record_harvest(key, count)
+
     # Validate format — must be ip:port
     valid = []
-    for scheme, addr in all_candidates:
+    seen_addrs: set[str] = set()
+    for source_key, scheme, addr in all_candidates:
         addr = addr.strip()
         if not re.match(r"^\d{1,3}(\.\d{1,3}){3}:\d{2,5}$", addr):
             continue
-        valid.append((scheme, addr))
+        if addr in seen_addrs:
+            continue
+        seen_addrs.add(addr)
+        valid.append((source_key, scheme, addr))
 
-    raw = len(valid)
-    # Dedupe
-    valid = list(dict.fromkeys(valid))
-    log(f"\n  Raw: {raw}  Dedup: {len(valid)}  Errors: {errors}")
+    log(f"\n  Raw: {len(all_candidates)}  Dedup: {len(valid)}  Errors: {errors}")
     return valid
 
 
@@ -733,7 +808,10 @@ STOP = False
 
 async def probe_candidates(candidates, concurrency, ynet_timeout, ip_timeout,
                            known_addrs, known_ips, master):
-    """Probe all candidates, appending hits to master in place."""
+    """Probe all candidates, appending hits to master in place.
+
+    candidates: list of (source_key, scheme, addr)
+    """
     global STOP
     sem = asyncio.Semaphore(concurrency)
     hits = 0
@@ -741,11 +819,10 @@ async def probe_candidates(candidates, concurrency, ynet_timeout, ip_timeout,
     t0 = time.time()
     total = len(candidates)
 
-    # Local dedup sets (copy from known)
     seen_addrs = set(known_addrs)
-    seen_ips = set(known_ips)
+    seen_ips   = set(known_ips)
 
-    async def _probe(scheme, addr):
+    async def _probe(source_key, scheme, addr):
         nonlocal hits, tried
         if STOP:
             return
@@ -768,23 +845,22 @@ async def probe_candidates(candidates, concurrency, ynet_timeout, ip_timeout,
         if ip:
             seen_ips.add(ip)
 
+        rec["source"] = source_key   # tag with origin source
         master.append(rec)
         hits += 1
         log(f"  HIT #{len(master):>5}  {scheme:6s} {addr:22s}  "
-            f"exit={ip or '?':16s}  ynet={rec['ynet_ms']}ms")
+            f"exit={ip or '?':16s}  ynet={rec['ynet_ms']}ms  src={source_key}")
 
-        # Checkpoint every 20 hits
         if hits % 20 == 0:
             save_master(master)
             log(f"  checkpoint: {len(master)} total in master")
 
-    # Create tasks in batches to avoid memory bloat
     batch_size = concurrency * 4
     for i in range(0, total, batch_size):
         if STOP:
             break
         batch = candidates[i:i + batch_size]
-        tasks = [asyncio.create_task(_probe(s, a)) for s, a in batch]
+        tasks = [asyncio.create_task(_probe(sk, s, a)) for sk, s, a in batch]
         await asyncio.gather(*tasks, return_exceptions=True)
 
         if (i + batch_size) % 2000 < batch_size:
@@ -794,7 +870,6 @@ async def probe_candidates(candidates, concurrency, ynet_timeout, ip_timeout,
                 f"master={len(master)}  rate={rate:.0f}/s  "
                 f"elapsed={dt:.0f}s")
 
-    # Final save
     save_master(master)
     dt = time.time() - t0
     log(f"  DONE: tried={tried}  new_hits={hits}  master={len(master)}  "
@@ -874,6 +949,10 @@ def main():
     signal.signal(signal.SIGINT, sighandler)
     signal.signal(signal.SIGTERM, sighandler)
 
+    # Source manager — tracks per-source scores across all runs
+    sm = _sm.SourceManager()
+    log(f"Source registry: {sm.stats()}")
+
     loop_n = 0
     while True:
         loop_n += 1
@@ -886,6 +965,11 @@ def main():
         log(f" CYCLE {loop_n}  (target: {args.target})")
         log(f"{'='*70}")
 
+        # Reset bad sources that have been idle long enough for a second chance
+        reset_n = sm.maybe_reset_bad_sources()
+        if reset_n:
+            log(f"  Reset {reset_n} bad sources — they get a fresh chance")
+
         # Load master
         master = load_master()
         known_addrs, known_ips = known_sets(master)
@@ -895,12 +979,12 @@ def main():
             log(f"TARGET REACHED: {len(master)} >= {args.target}")
             break
 
-        # Fetch
+        # Fetch — pass sm so sources are registered and harvest counts recorded
         log("\nFetching sources...")
-        candidates = gather_all()
+        candidates = gather_all(sm=sm)
 
         # Exclude known
-        fresh = [(s, a) for s, a in candidates if a not in known_addrs]
+        fresh = [(sk, s, a) for sk, s, a in candidates if a not in known_addrs]
         log(f"Fresh candidates (not in master): {len(fresh)}")
 
         if not fresh:

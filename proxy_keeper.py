@@ -161,6 +161,67 @@ SOURCES = [
     ("socks5", "https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/socks5/global/socks5_checked.txt"),
     ("socks4", "https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/socks4/global/socks4_checked.txt"),
     ("http",   "https://raw.githubusercontent.com/elliottophellia/yakumo/master/results/http/global/http_checked.txt"),
+    # ── dpangestuw (4.9k http, 4.4k socks5, 3.1k socks4 — high yield) ────────
+    ("http",   "https://raw.githubusercontent.com/dpangestuw/Free-Proxy/main/http_proxies.txt"),
+    ("socks4", "https://raw.githubusercontent.com/dpangestuw/Free-Proxy/main/socks4_proxies.txt"),
+    ("socks5", "https://raw.githubusercontent.com/dpangestuw/Free-Proxy/main/socks5_proxies.txt"),
+    # ── tuanminpay (14k http, 14k socks5, 11k socks4) ────────────────────────
+    ("http",   "https://raw.githubusercontent.com/tuanminpay/live-proxy/master/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/tuanminpay/live-proxy/master/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/tuanminpay/live-proxy/master/socks5.txt"),
+    # ── proxy4parsing (19k http entries) ─────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/proxy4parsing/proxy-list/main/http.txt"),
+    # ── saschazesiger ────────────────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/saschazesiger/Free-Proxies/master/proxies/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/saschazesiger/Free-Proxies/master/proxies/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/saschazesiger/Free-Proxies/master/proxies/socks5.txt"),
+    # ── proxifly by protocol (separate from /all endpoint) ───────────────────
+    ("http",   "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt"),
+    ("socks4", "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks4/data.txt"),
+    ("socks5", "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.txt"),
+    # ── r00tee ────────────────────────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/r00tee/Proxy-List/main/Https.txt"),
+    ("socks4", "https://raw.githubusercontent.com/r00tee/Proxy-List/main/Socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/r00tee/Proxy-List/main/Socks5.txt"),
+    # ── lalifeier ────────────────────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/lalifeier/proxy-list/main/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/lalifeier/proxy-list/main/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/lalifeier/proxy-list/main/socks5.txt"),
+    # ── vakhov fresh list ────────────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/socks5.txt"),
+    # ── manuGMG ──────────────────────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/manuGMG/proxy-365/main/HTTP.txt"),
+    ("socks4", "https://raw.githubusercontent.com/manuGMG/proxy-365/main/SOCKS4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/manuGMG/proxy-365/main/SOCKS5.txt"),
+    # ── saisuiu Chinese proxy pool ───────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/saisuiu/Lionkings-Http-Proxys-Proxies/main/cnfree.txt"),
+    # ── sunny9577 socks4 (http already present) ───────────────────────────────
+    ("socks4", "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/socks4_proxies.txt"),
+    # ── yemixzy socks4 (http+socks5 already present) ─────────────────────────
+    ("socks4", "https://raw.githubusercontent.com/yemixzy/proxy-list/master/proxies/socks4.txt"),
+    # ── UserR3X ──────────────────────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/UserR3X/proxy-list/main/online/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/UserR3X/proxy-list/main/online/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/UserR3X/proxy-list/main/online/socks5.txt"),
+    # ── Vann-Dev ─────────────────────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/Vann-Dev/proxy-list/main/proxies/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/Vann-Dev/proxy-list/main/proxies/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/Vann-Dev/proxy-list/main/proxies/socks5.txt"),
+    # ── im-razvan ────────────────────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/im-razvan/proxy_list/main/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/im-razvan/proxy_list/main/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/im-razvan/proxy_list/main/socks5.txt"),
+    # ── MrMarble ─────────────────────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/MrMarble/proxy-list/main/all.txt"),
+    # ── themiralay ───────────────────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/themiralay/Proxy-List-World/master/data.txt"),
+    # ── a2u ──────────────────────────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/a2u/free-proxy-list/master/free-proxy-list.txt"),
+    # ── proxyspace GitHub mirror ─────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/proxyspace/proxyspace/master/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/proxyspace/proxyspace/master/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/proxyspace/proxyspace/master/socks5.txt"),
 ]
 
 # ── Additional live API sources (fetched directly, not from GitHub) ─────────
@@ -338,6 +399,40 @@ def _parse_lines(scheme, text):
     return out
 
 
+def _parse_lines_with_scheme(text):
+    """Parse lines that may have scheme:// prefixes (e.g. socks5://1.2.3.4:1080)."""
+    out = []
+    VALID = {"http", "https", "socks4", "socks5"}
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "://" in line:
+            s, _, addr = line.partition("://")
+            s = s.lower()
+            if s == "https":
+                s = "http"
+            if s not in VALID:
+                continue
+            addr = addr.strip()
+            parts = addr.split(":")
+            if len(parts) == 2:
+                try:
+                    int(parts[1])
+                    out.append((s, addr))
+                except ValueError:
+                    pass
+        else:
+            parts = line.split(":")
+            if len(parts) == 2:
+                try:
+                    int(parts[1])
+                    out.append(("http", line))
+                except ValueError:
+                    pass
+    return out
+
+
 def fetch_candidates(known_addrs):
     candidates = []
     for scheme, url in SOURCES:
@@ -346,6 +441,16 @@ def fetch_candidates(known_addrs):
             candidates.extend(_parse_lines(scheme, body))
         except Exception:
             pass
+
+    # All-protocol endpoint — one call, 7k+ proxies with scheme:// prefix
+    try:
+        url = ("https://api.proxyscrape.com/v3/free-proxy-list/get"
+               "?request=displayproxies&protocol=all"
+               "&timeout=10000&country=all&proxy_format=protocolipport&format=text")
+        body = _http_get(url, 45)
+        candidates.extend(_parse_lines_with_scheme(body))
+    except Exception:
+        pass
 
     for proto in ("http", "socks4", "socks5"):
         # Standard bulk fetch
