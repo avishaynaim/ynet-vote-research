@@ -582,29 +582,46 @@ def fetch_spys_scrape():
 
 def fetch_checkerproxy():
     """
-    checkerproxy.net daily archive — the highest-value free source because
-    proxies here were actually verified within the last 24-48 h by an
-    independent prober, not just scraped and published.  Type field:
-      1=HTTP  2=HTTPS  3=SOCKS4  4=SOCKS5
-    We pull today + yesterday in case today's archive is still building.
+    checkerproxy.net daily archive — pre-verified proxies from last 24-48 h.
+    Type field: 1=HTTP  2=HTTPS  3=SOCKS4  4=SOCKS5
+
+    NOTE (cycle 11 diagnosis): checkerproxy.net API returns HTTP 404 for all
+    archive dates and times out on the main page — the site appears to be down
+    or has changed its API. We try 5 days back and multiple endpoint variants
+    before giving up. Distribution logging helps diagnose future issues.
     """
     TYPE_MAP = {1: "http", 2: "http", 3: "socks4", 4: "socks5"}
     import datetime
+    from collections import Counter as _Counter
     out = []
-    for delta in range(3):
-        try:
-            d = (datetime.date.today() - datetime.timedelta(days=delta)).strftime("%Y-%m-%d")
-            body = http_get(f"https://checkerproxy.net/api/archive/{d}", 30)
-            items = json.loads(body)
-            for item in items:
-                addr   = (item.get("addr") or "").strip()
-                scheme = TYPE_MAP.get(item.get("type", 1), "http")
-                if addr:
-                    out.append((scheme, addr))
-            if out:
-                break   # got results — no need to go further back
-        except Exception:
-            pass
+    tried_dates = []
+    for delta in range(5):
+        d = (datetime.date.today() - datetime.timedelta(days=delta)).strftime("%Y-%m-%d")
+        tried_dates.append(d)
+        for endpoint in [
+            f"https://checkerproxy.net/api/archive/{d}",
+            f"https://checkerproxy.net/api/archive/{d}/",
+        ]:
+            try:
+                body = http_get(endpoint, 20)
+                if not body or len(body) < 10:
+                    continue
+                items = json.loads(body)
+                if not isinstance(items, list) or not items:
+                    continue
+                for item in items:
+                    addr   = (item.get("addr") or "").strip()
+                    scheme = TYPE_MAP.get(item.get("type", 1), "http")
+                    if addr and ":" in addr:
+                        out.append((scheme, addr))
+                if out:
+                    dist = dict(_Counter(s for s, _ in out))
+                    log(f"  checkerproxy.net [{d}]: {len(out)} proxies — {dist}")
+                    return out
+            except Exception:
+                pass
+    if not out:
+        log(f"  checkerproxy.net: 0 results (tried dates: {tried_dates[:2]}...) — site may be down")
     return out
 
 
@@ -906,6 +923,33 @@ def gather_all(sm=None):
         valid.append((source_key, scheme, addr))
 
     log(f"\n  Raw: {len(all_candidates)}  Dedup: {len(valid)}  Errors: {errors}")
+
+    # Per-source quality summary — shows hit_rate from source_registry to help
+    # identify which sources are worth keeping vs which have degraded quality.
+    if sm:
+        try:
+            reg = sm._registry
+            quality_rows = []
+            for key, count in sorted(per_source.items(), key=lambda x: -x[1]):
+                if count == 0:
+                    continue
+                probe_hits = reg.get(key, {}).get("probe_hits", 0)
+                harvested  = max(reg.get(key, {}).get("harvested", 1), 1)
+                hit_rate   = 100.0 * probe_hits / harvested if probe_hits > 0 else 0.0
+                quality_rows.append((key, count, probe_hits, hit_rate))
+            # Show top 10 by this-cycle count, plus top 5 by hit_rate
+            if quality_rows:
+                log("  Source quality (this cycle — count / probe_hits / hit_rate%):")
+                shown = {}
+                for key, cnt, ph, hr in sorted(quality_rows, key=lambda x: -x[3])[:5]:
+                    log(f"    {key:<30} fetched={cnt:>6}  hits={ph:>5}  rate={hr:.2f}%")
+                    shown[key] = True
+                for key, cnt, ph, hr in sorted(quality_rows, key=lambda x: -x[1])[:10]:
+                    if key not in shown:
+                        log(f"    {key:<30} fetched={cnt:>6}  hits={ph:>5}  rate={hr:.2f}%")
+        except Exception:
+            pass
+
     return valid
 
 

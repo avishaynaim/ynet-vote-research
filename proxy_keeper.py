@@ -531,6 +531,98 @@ def _fetch_checkerproxy_keeper():
 
 
 # ══════════════════════════════════════════════════════════════════════════
+# Self-healing backfill: tag untagged master_pool entries at cycle start
+# by fetching the top high-hit-rate sources and matching addrs.
+#
+# Ordered by observed hit-rate (high → low). These small lists (~1-15k IPs
+# each) are fetched in parallel so the backfill completes in <20s.
+_BACKFILL_SOURCES = [
+    # (source_key, scheme, url)  — only sources with known >= 2% hit rate
+    ("anon_s5",    "socks5", "https://raw.githubusercontent.com/Anonym0usWork1221/Free-Proxies/main/proxy_files/socks5_proxies.txt"),
+    ("ercin_s5",   "socks5", "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/socks5.txt"),
+    ("monosans_s5","socks5", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/socks5.txt"),
+    ("hookzof_s5", "socks5", "https://raw.githubusercontent.com/hookzof/socks5_list/master/proxy.txt"),
+    ("alii_s5",    "socks5", "https://raw.githubusercontent.com/ALIILAPRO/Proxy/main/socks5.txt"),
+    ("zaeem_s5",   "socks5", "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/socks5.txt"),
+    ("tuan_s5",    "socks5", "https://raw.githubusercontent.com/tuanminpay/live-proxy/master/socks5.txt"),
+    ("speedx_sockslist_s5","socks5","https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/socks5.txt"),
+    ("anon_http",  "http",   "https://raw.githubusercontent.com/Anonym0usWork1221/Free-Proxies/main/proxy_files/http_proxies.txt"),
+    ("mmpx12_http","http",   "https://raw.githubusercontent.com/mmpx12/proxy-list/master/http.txt"),
+    ("speedx_http","http",   "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt"),
+    ("monosans_http","http", "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt"),
+    ("ercin_http", "http",   "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/http.txt"),
+    ("dpang_http", "http",   "https://raw.githubusercontent.com/dpangestuw/Free-Proxy/main/http_proxies.txt"),
+    ("dpang_s5",   "socks5", "https://raw.githubusercontent.com/dpangestuw/Free-Proxy/main/socks5_proxies.txt"),
+    ("proxifly",   "http",   "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/all/data.txt"),
+    ("jetkai_s5",  "socks5", "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-socks5.txt"),
+    ("jetkai_http","http",   "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt"),
+    ("speedx_sockslist_http","http","https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt"),
+    ("r00t_http",  "http",   "https://raw.githubusercontent.com/r00tee/Proxy-List/main/Https.txt"),
+]
+
+def _quick_backfill(master_pool):
+    """Fetch top-N high-hit-rate sources in parallel and tag untagged master entries.
+
+    Called at start of run_cycle() before the probe phase.
+    Returns count of entries newly tagged.
+    """
+    untagged = [p for p in master_pool if not p.get("source")]
+    if not untagged:
+        return 0
+
+    # Build addr→source map from fetched lists
+    addr_to_src = {}
+
+    def _fetch_source(item):
+        src_key, scheme, url = item
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "proxy-keeper/backfill"})
+            with urllib.request.urlopen(req, timeout=15) as r:
+                text = r.read().decode("utf-8", errors="ignore")
+            addrs = {}
+            for line in text.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                # Strip scheme:// prefix if present
+                if "://" in line:
+                    _, _, line = line.partition("://")
+                    line = line.strip()
+                parts = line.split(":")
+                if len(parts) == 2:
+                    try:
+                        int(parts[1])
+                        addrs[line] = src_key
+                    except ValueError:
+                        pass
+            return addrs
+        except Exception:
+            return {}
+
+    with ThreadPoolExecutor(max_workers=20) as ex:
+        futs = [ex.submit(_fetch_source, item) for item in _BACKFILL_SOURCES]
+        for fut in as_completed(futs):
+            try:
+                result = fut.result()
+                # First-seen source wins (sources are ordered high→low hit-rate)
+                for addr, src in result.items():
+                    if addr not in addr_to_src:
+                        addr_to_src[addr] = src
+            except Exception:
+                pass
+
+    # Tag untagged entries
+    tagged = 0
+    for p in untagged:
+        addr = p.get("addr", "")
+        src = addr_to_src.get(addr)
+        if src:
+            p["source"] = src
+            tagged += 1
+
+    return tagged
+
+
 def load_known_articles():
     """Return list of article IDs. Try server API → local file → config fallback."""
     try:
@@ -904,6 +996,13 @@ def probe_all(candidates, targets, used_addrs, on_flush, prev_alive=None):
                 if not rec.get("source") and src_key:
                     rec["source"] = src_key
                 hits.append(rec)
+                # Record probe hit for source quality tracking
+                effective_src = rec.get("source") or src_key
+                if effective_src:
+                    try:
+                        _sm.get().record_probe_hit(effective_src)
+                    except Exception:
+                        pass
                 if len(hits) - last_flush >= FLUSH_EVERY:
                     last_flush = len(hits)
                     on_flush(list(hits), set(tested_addrs), prev_alive)
@@ -995,6 +1094,16 @@ def run_cycle(cycle_num):
     master = load_master()
     known_addrs = {p["addr"] for p in master}
     log(f"  master_pool: {len(master)} entries")
+
+    # Self-healing backfill: tag untagged master entries using top sources
+    try:
+        tagged_n = _quick_backfill(master)
+        if tagged_n > 0:
+            log(f"  backfill: tagged {tagged_n} previously-untagged master entries")
+            # Persist the newly-tagged entries immediately so the next flush includes them
+            atomic_write(MASTER, master)
+    except Exception as _bf_err:
+        log(f"  backfill skipped ({_bf_err})")
 
     # Load real articles + their comments to use as vote targets
     log("Phase 0: loading vote targets...")

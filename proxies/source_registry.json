@@ -108,13 +108,14 @@
     "scheme": "socks5",
     "category": "github",
     "score": 0,
-    "harvested": 3708,
+    "harvested": 3808,
     "tested": 0,
     "succeeded": 0,
     "failed": 0,
-    "last_harvested": "2026-05-10T16:50:24.431269+00:00",
+    "last_harvested": "2026-05-10T17:31:00.187869+00:00",
     "last_result": null,
-    "reset_count": 0
+    "reset_count": 0,
+    "probe_hits": 3
   },
   "mmpx12_http": {
     "url": "https://raw.githubusercontent.com/mmpx12/proxy-list/master/http.txt",
