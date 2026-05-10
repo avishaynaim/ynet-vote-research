@@ -56,6 +56,32 @@ class SourceManager:
         return {}
 
     def _save(self):
+        """Write registry to disk, merging additive counters from the on-disk state first.
+
+        Multiple processes (proxy_keeper, mega_harvest) share the same registry file.
+        Each process has its own in-memory state loaded at startup.  Without merging,
+        a slower-updating process can overwrite probe_hits/harvested increments made
+        by a faster process.  We merge additive fields from disk before each write so
+        increments from other processes are never lost.
+        """
+        # ADDITIVE fields — take max(in_memory, on_disk) so neither process rewinds the other
+        ADDITIVE = ("harvested", "probe_hits", "tested", "succeeded", "failed", "score")
+        try:
+            on_disk = json.load(open(self.registry_path, encoding="utf-8"))
+            for key, disk_entry in on_disk.items():
+                if key in self._registry:
+                    mem = self._registry[key]
+                    for field in ADDITIVE:
+                        dv = disk_entry.get(field, 0) or 0
+                        mv = mem.get(field, 0) or 0
+                        if dv > mv:
+                            mem[field] = dv
+                else:
+                    # Entry exists on disk but not in memory — keep it
+                    self._registry[key] = disk_entry
+        except Exception:
+            pass  # If disk read fails, proceed with in-memory state
+
         os.makedirs(os.path.dirname(self.registry_path), exist_ok=True)
         tmp = self.registry_path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
