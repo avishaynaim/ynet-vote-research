@@ -782,18 +782,22 @@ def fetch_candidates(known_addrs):
     candidates = []  # list of (scheme, addr, source_key)
     sm = _sm.get()
 
-    for scheme, url in SOURCES:
+    def _fetch_one_source(item):
+        scheme, url = item
         src_key = URL_TO_SOURCE.get(url, "keeper")
         try:
             sm.ensure_source(src_key, url=url, scheme=scheme, category="github")
-            body = _http_get(url)
+            body = _http_get(url, timeout=12)
             found = _parse_lines(scheme, body)
-            for s, a in found:
-                candidates.append((s, a, src_key))
             if found:
                 sm.record_harvest(src_key, len(found))
+            return [(s, a, src_key) for s, a in found]
         except Exception:
-            pass
+            return []
+
+    with ThreadPoolExecutor(max_workers=30) as ex:
+        for result in ex.map(_fetch_one_source, SOURCES, timeout=60):
+            candidates.extend(result)
 
     # All-protocol endpoint — one call, 7k+ proxies with scheme:// prefix
     try:

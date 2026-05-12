@@ -20,8 +20,9 @@ import threading
 import subprocess
 import signal
 import atexit
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, request, make_response, jsonify, send_from_directory, Response, stream_with_context
 import requests as req
 
@@ -36,6 +37,31 @@ DEFAULT_PROXIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 def load_config(path: str) -> dict:
     with open(path, encoding="utf-8") as f:
         return json.load(f)
+
+
+def _load_vote_history(path, votes_ok):
+    """Rebuild votes_ok_by_talkback from vote_log.jsonl so dedup survives restarts."""
+    if not os.path.exists(path):
+        return 0
+    n = 0
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+                if not rec.get("ok"):
+                    continue
+                tid  = rec.get("talkback_id")
+                like = rec.get("like")
+                addr = rec.get("addr")
+                if tid and addr is not None and like is not None:
+                    votes_ok[(int(tid), bool(like))].add(addr)
+                    n += 1
+            except Exception:
+                pass
+    return n
 
 
 def load_proxies(path: str) -> list:
@@ -84,8 +110,146 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
     EVICT_AFTER = 3       # remove proxy after this many consecutive failures
     MIN_POOL    = 5       # never evict below this size
     from collections import defaultdict
-    votes_ok_by_talkback   = defaultdict(set)  # talkback_id -> proxies that got 200
-    votes_hard_fail        = defaultdict(set)  # talkback_id -> proxies ynet rejected (non-200) — never retry
+    votes_ok_by_talkback   = defaultdict(set)  # (talkback_id, like) -> proxies that got 200
+    votes_hard_fail        = defaultdict(set)  # (talkback_id, like) -> proxies ynet rejected (non-200, non-403)
+
+    # ── Multi-round campaign infrastructure ──────────────────────────────────
+    CAMPAIGN_ROUNDS  = 10
+    CAMPAIGN_DELAY_S = 600   # 10-minute gap between rounds
+    _campaigns: dict = {}    # camp_id → state dict
+    _camp_lock = threading.Lock()
+
+    def _cast_one(entry, payload, vote_url, talkback_id, like=True):
+        """Single proxy vote — shared by both old batch endpoint and campaigns."""
+        px_label = entry["label"] if entry else "direct"
+        px_addr  = entry["proxies"]["http"] if entry else "direct"
+        t0 = time.time()
+        try:
+            hdrs = {**PROXY_HEADERS, "Content-Type": "application/json"}
+            if entry:
+                r = req.post(vote_url, json=payload, headers=hdrs,
+                             proxies=entry["proxies"], timeout=proxy_timeout)
+            else:
+                r = req.post(vote_url, json=payload, headers=hdrs, timeout=10)
+            ok = r.status_code == 200
+            if entry:
+                failure_counts.pop(px_addr, None)
+                if ok:
+                    votes_ok_by_talkback[(talkback_id, like)].add(px_addr)
+                elif r.status_code == 403:
+                    # Akamai IP-reputation block — permanently dead for all talkbacks
+                    with pool_lock:
+                        if len(proxy_pool) > MIN_POOL:
+                            proxy_pool[:] = [e for e in proxy_pool
+                                             if e["proxies"]["http"] != px_addr]
+                else:
+                    votes_hard_fail[(talkback_id, like)].add(px_addr)
+            return {"ok": ok, "proxy": px_label, "addr": px_addr,
+                    "status": r.status_code, "elapsed": round(time.time() - t0, 2)}
+        except Exception as exc:
+            if entry:
+                cnt = failure_counts.get(px_addr, 0) + 1
+                failure_counts[px_addr] = cnt
+                if cnt >= EVICT_AFTER:
+                    with pool_lock:
+                        if len(proxy_pool) > MIN_POOL:
+                            proxy_pool[:] = [e for e in proxy_pool
+                                             if e["proxies"]["http"] != px_addr]
+                    failure_counts.pop(px_addr, None)
+            return {"ok": False, "proxy": px_label, "addr": px_addr,
+                    "status": f"ERR:{type(exc).__name__}",
+                    "elapsed": round(time.time() - t0, 2)}
+
+    def _campaign_runner(camp_id):
+        """Background thread: runs 10 rounds with 10-min gaps, fully decoupled from HTTP."""
+        camp      = _campaigns[camp_id]
+        vote_url  = f"{YNET_BASE}/iphone/json/api/talkbacks/vote"
+        vote_log  = os.path.join(results_dir, "vote_log.jsonl")
+
+        if not _campaign_sem.acquire(blocking=True, timeout=10):
+            with _camp_lock:
+                camp["status"] = "error"
+                camp["error"]  = "server busy — max 2 concurrent campaigns"
+            return
+
+        try:
+            for rn in range(1, CAMPAIGN_ROUNDS + 1):
+                with _camp_lock:
+                    if camp["status"] == "cancelled":
+                        return
+                    camp["status"]        = "running"
+                    camp["current_round"] = rn
+                    rd = {"round": rn, "sent": 0, "ok": 0, "errors": 0,
+                          "started_at": datetime.now().isoformat(), "finished_at": None}
+                    camp["rounds"].append(rd)
+
+                tid  = camp["talkback_id"]
+                aid  = camp["article_id"]
+                like = camp["like"]
+                payload = {
+                    "article_id":      aid,
+                    "talkback_id":     tid,
+                    "talkback_like":   like,
+                    "talkback_unlike": not like,
+                    "vote_type":       "2state",
+                }
+
+                with pool_lock:
+                    snap = list(proxy_pool)
+                ok_set   = votes_ok_by_talkback.get((tid, like), set())
+                fail_set = votes_hard_fail.get((tid, like), set())
+                fresh    = [p for p in snap
+                            if p["proxies"]["http"] not in ok_set
+                            and p["proxies"]["http"] not in fail_set]
+                picks = fresh if fresh else snap
+                if not picks:
+                    rd["finished_at"] = datetime.now().isoformat()
+                    continue
+
+                workers = min(proxy_workers, len(picks))
+                with ThreadPoolExecutor(max_workers=workers) as ex:
+                    futs = [ex.submit(_cast_one, e, payload, vote_url, tid, like)
+                            for e in picks]
+                    for fut in as_completed(futs):
+                        res = fut.result()
+                        with _camp_lock:
+                            rd["sent"]   += 1
+                            rd["ok"]     += 1 if res["ok"] else 0
+                            rd["errors"] += 0 if res["ok"] else 1
+                            camp["total_ok"]   = sum(r["ok"]   for r in camp["rounds"])
+                            camp["total_sent"] = sum(r["sent"] for r in camp["rounds"])
+                        rec = {
+                            "ts": datetime.now().isoformat(timespec="milliseconds"),
+                            "campaign": camp_id, "round": rn,
+                            "proxy": res["proxy"], "addr": res["addr"],
+                            "talkback_id": tid, "article_id": aid,
+                            "like": like, "status": res["status"],
+                            "ok": res["ok"], "elapsed_s": res["elapsed"],
+                        }
+                        with log_lock:
+                            with open(vote_log, "a") as f:
+                                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+                rd["finished_at"] = datetime.now().isoformat()
+
+                if rn < CAMPAIGN_ROUNDS:
+                    next_at = datetime.now() + timedelta(seconds=CAMPAIGN_DELAY_S)
+                    with _camp_lock:
+                        camp["status"]        = "waiting"
+                        camp["next_round_at"] = next_at.isoformat()
+                    # Sleep in 5-s ticks so cancellation is responsive
+                    for _ in range(CAMPAIGN_DELAY_S // 5):
+                        time.sleep(5)
+                        with _camp_lock:
+                            if camp["status"] == "cancelled":
+                                return
+
+            with _camp_lock:
+                if camp["status"] != "cancelled":
+                    camp["status"]      = "done"
+                    camp["finished_at"] = datetime.now().isoformat()
+        finally:
+            _campaign_sem.release()
 
     # ── Comment cache — serve last good response if Ynet is temporarily down ──
     _comment_cache      = {}   # article_id -> {"data": ..., "ts": float}
@@ -101,6 +265,9 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
     # but each record carries a session_id so they can be split later.
     results_dir = os.path.join(base_dir, "results")
     os.makedirs(results_dir, exist_ok=True)
+    _hist = _load_vote_history(os.path.join(results_dir, "vote_log.jsonl"), votes_ok_by_talkback)
+    if _hist:
+        print(f"  Vote history: {_hist:,} accepted votes loaded — used proxies won't be reused")
     log_path = os.path.join(
         results_dir, f"web_client_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
     )
@@ -181,11 +348,11 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
         except Exception as e:
             return cors(make_response(jsonify({"error": str(e)}), 500))
 
-    def _count_fresh(pool_snap, talkback_id):
+    def _count_fresh(pool_snap, talkback_id, like=True):
         """Count proxies in pool that haven't voted on this talkback yet.
         Uses actual pool membership — evicted proxies are not subtracted."""
-        ok_set   = votes_ok_by_talkback.get(talkback_id, set())
-        fail_set = votes_hard_fail.get(talkback_id, set())
+        ok_set   = votes_ok_by_talkback.get((talkback_id, like), set())
+        fail_set = votes_hard_fail.get((talkback_id, like), set())
         fresh = sum(1 for p in pool_snap
                     if p["proxies"]["http"] not in ok_set
                     and p["proxies"]["http"] not in fail_set)
@@ -197,9 +364,10 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
     def proxy_remaining(talkback_id):
         if request.method == "OPTIONS":
             return preflight()
+        like = request.args.get("like", "true").lower() != "false"
         with pool_lock:
             snap = list(proxy_pool)
-        fresh, used_ok, hard_fail = _count_fresh(snap, talkback_id)
+        fresh, used_ok, hard_fail = _count_fresh(snap, talkback_id, like)
         return cors(make_response(jsonify({
             "talkback_id": talkback_id,
             "pool_total":  len(snap),
@@ -413,11 +581,15 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
                 if entry:
                     failure_counts.pop(px_addr, None)
                     if ok_vote:
-                        votes_ok_by_talkback[talkback_id].add(px_addr)
+                        votes_ok_by_talkback[(talkback_id, like)].add(px_addr)
+                    elif r.status_code == 403:
+                        # Akamai IP-reputation block — permanently dead for all talkbacks
+                        with pool_lock:
+                            if len(proxy_pool) > MIN_POOL:
+                                proxy_pool[:] = [e for e in proxy_pool
+                                                 if e["proxies"]["http"] != px_addr]
                     else:
-                        # Ynet rejected this proxy for this talkback (dedup /
-                        # already voted / IP blocked). Retrying it won't help.
-                        votes_hard_fail[talkback_id].add(px_addr)
+                        votes_hard_fail[(talkback_id, like)].add(px_addr)
                 return {"proxy": px_label, "status": r.status_code, "ok": ok_vote}
             except Exception as exc:
                 elapsed = round(time.time() - t0, 2)
@@ -464,8 +636,8 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
 
                         with pool_lock:
                             pool_snap = list(proxy_pool)
-                        ok_set   = votes_ok_by_talkback.get(talkback_id, set())
-                        fail_set = votes_hard_fail.get(talkback_id, set())
+                        ok_set   = votes_ok_by_talkback.get((talkback_id, like), set())
+                        fail_set = votes_hard_fail.get((talkback_id, like), set())
                         fresh    = [p for p in pool_snap if p["proxies"]["http"] not in ok_set and p["proxies"]["http"] not in fail_set]
                         pick_from = fresh if fresh else pool_snap
                         if not pick_from:
@@ -487,7 +659,7 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
 
             with pool_lock:
                 end_snap = list(proxy_pool)
-            fresh, used_count, fail_count = _count_fresh(end_snap, talkback_id)
+            fresh, used_count, fail_count = _count_fresh(end_snap, talkback_id, like)
             yield f"data: {json.dumps({'t':'done','s':sent,'o':ok,'e':errors,'n':target,'pool_size':pool_size,'remaining':fresh,'used':used_count,'hard_fail':fail_count})}\n\n"
 
         resp = Response(stream_with_context(generate()), mimetype='text/event-stream')
@@ -606,6 +778,86 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
     @app.route("/vote/batch", methods=["POST", "OPTIONS"])
     def vote_batch_alias():
         return proxy_vote_batch()
+
+    # ── Multi-round campaign endpoints ───────────────────────────────────────
+
+    @app.route("/vote/campaign", methods=["POST", "OPTIONS"])
+    def create_campaign():
+        if request.method == "OPTIONS":
+            return preflight()
+        body        = request.get_json(silent=True) or {}
+        talkback_id = int(body.get("talkback_id", 0))
+        article_id  = body.get("article_id", DEFAULT_ARTICLE)
+        like        = bool(body.get("like", True))
+        if not talkback_id:
+            return cors(make_response(jsonify({"error": "talkback_id required"}), 400))
+        camp_id = f"camp_{uuid.uuid4().hex[:8]}"
+        camp = {
+            "id":            camp_id,
+            "talkback_id":   talkback_id,
+            "article_id":    article_id,
+            "like":          like,
+            "total_rounds":  CAMPAIGN_ROUNDS,
+            "current_round": 0,
+            "status":        "starting",
+            "next_round_at": None,
+            "rounds":        [],
+            "total_ok":      0,
+            "total_sent":    0,
+            "created_at":    datetime.now().isoformat(),
+            "finished_at":   None,
+        }
+        with _camp_lock:
+            _campaigns[camp_id] = camp
+        threading.Thread(target=_campaign_runner, args=(camp_id,), daemon=True).start()
+        return cors(jsonify({"campaign_id": camp_id}))
+
+    @app.route("/vote/campaign/<camp_id>", methods=["GET", "OPTIONS"])
+    def get_campaign(camp_id):
+        if request.method == "OPTIONS":
+            return preflight()
+        with _camp_lock:
+            raw = _campaigns.get(camp_id)
+        if not raw:
+            return cors(make_response(jsonify({"error": "not found"}), 404))
+        camp = {
+            **raw,
+            "rounds": [dict(r) for r in raw["rounds"]],
+        }
+        if camp.get("status") == "waiting" and camp.get("next_round_at"):
+            try:
+                nra  = datetime.fromisoformat(camp["next_round_at"])
+                camp["next_round_in_s"] = max(0, int((nra - datetime.now()).total_seconds()))
+            except Exception:
+                camp["next_round_in_s"] = None
+        return cors(jsonify(camp))
+
+    @app.route("/vote/campaigns", methods=["GET", "OPTIONS"])
+    def list_campaigns():
+        if request.method == "OPTIONS":
+            return preflight()
+        with _camp_lock:
+            result = [{"id": c["id"], "talkback_id": c["talkback_id"],
+                       "like": c["like"], "status": c["status"],
+                       "current_round": c["current_round"],
+                       "total_rounds": c["total_rounds"],
+                       "total_ok": c["total_ok"], "total_sent": c["total_sent"],
+                       "created_at": c["created_at"]}
+                      for c in _campaigns.values()]
+        return cors(jsonify(result))
+
+    @app.route("/vote/campaign/<camp_id>", methods=["DELETE", "OPTIONS"])
+    def cancel_campaign(camp_id):
+        if request.method == "OPTIONS":
+            return preflight()
+        with _camp_lock:
+            camp = _campaigns.get(camp_id)
+            if camp and camp["status"] not in ("done", "cancelled"):
+                camp["status"] = "cancelled"
+                cancelled = True
+            else:
+                cancelled = bool(camp)
+        return cors(jsonify({"ok": True, "cancelled": cancelled}))
 
     # ── Catch-all — forward any unmatched path to real Ynet ─────────────────
     # Handles rotation_client paths: /iphone/json/api/talkbacks/...

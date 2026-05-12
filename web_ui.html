@@ -251,6 +251,40 @@
     .scrape-page button { background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 4px 12px; font-size: .78rem; cursor: pointer; }
     .scrape-page button:disabled { opacity: .35; cursor: not-allowed; }
     .scrape-page button:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
+
+    /* ── Campaign cards ── */
+    .camp-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--r); padding: 11px 13px; margin-bottom: 6px; }
+    .camp-card.camp-running { border-color: var(--accent); }
+    .camp-card.camp-waiting { border-color: #78350f; }
+    .camp-card.camp-done    { border-color: #1e3a2a; opacity: .8; }
+    .camp-card.camp-error   { border-color: #7f1d1d; }
+    .camp-header { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+    .camp-icon   { font-size: 1rem; }
+    .camp-tid    { font-size: .72rem; color: var(--muted); }
+    .camp-lbl    { font-size: .82rem; font-weight: 600; flex: 1; }
+    .camp-close  { background: none; border: none; color: var(--muted); cursor: pointer; font-size: .85rem; padding: 0 2px; }
+    .camp-rounds { font-size: .72rem; color: var(--muted); display: flex; gap: 3px; flex-wrap: wrap; margin-bottom: 5px; }
+    .camp-round-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border); display: inline-block; }
+    .camp-round-dot.done    { background: #22c55e; }
+    .camp-round-dot.running { background: var(--accent); animation: pulse-dot .8s infinite alternate; }
+    .camp-round-dot.waiting { background: #f59e0b; }
+    @keyframes pulse-dot { from { opacity: .5; } to { opacity: 1; } }
+    .camp-stats  { display: flex; gap: 10px; font-size: .78rem; margin-top: 4px; }
+    .camp-ok     { color: #4ade80; }
+    .camp-sent   { color: var(--muted); }
+    .camp-countdown { color: #f59e0b; font-size: .75rem; margin-top: 4px; }
+
+    /* ── Toast notifications ── */
+    #toastContainer { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column-reverse; gap: 8px; pointer-events: none; }
+    .toast { background: #1e293b; border: 1px solid var(--border); border-radius: 10px; padding: 10px 16px; font-size: .82rem; color: var(--text); min-width: 240px; max-width: 340px; box-shadow: 0 4px 24px #0008; animation: toast-in .25s ease; pointer-events: auto; display: flex; align-items: center; gap: 10px; }
+    .toast.toast-like    { border-color: #15803d; }
+    .toast.toast-dislike { border-color: #991b1b; }
+    .toast.toast-done    { border-color: #1d4ed8; }
+    .toast-icon  { font-size: 1.1rem; flex-shrink: 0; }
+    .toast-body  { flex: 1; }
+    .toast-title { font-weight: 700; margin-bottom: 2px; }
+    .toast-sub   { color: var(--muted); font-size: .75rem; }
+    @keyframes toast-in { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
   </style>
 </head>
 <body>
@@ -313,8 +347,8 @@
     <div>
       <div class="ctrl-label">Action</div>
       <div class="action-grid">
-        <button class="btn-action btn-like"    id="btnLike"    disabled onclick="vote(true)">👍 Like</button>
-        <button class="btn-action btn-dislike" id="btnDislike" disabled onclick="vote(false)">👎 Dislike</button>
+        <button class="btn-action btn-like"    id="btnLike"    disabled onmouseenter="syncSliderForType(true)"  onclick="vote(true)">👍 Like</button>
+        <button class="btn-action btn-dislike" id="btnDislike" disabled onmouseenter="syncSliderForType(false)" onclick="vote(false)">👎 Dislike</button>
       </div>
     </div>
 
@@ -411,9 +445,11 @@ const Config = {
   maxVotes:   99999, // no real limit — proxies are reusable
 
   endpoints: {
-    comments:  '/api/comments',
-    voteBatch: '/vote/batch',
-    vote:      '/iphone/json/api/talkbacks/vote',
+    comments:     '/api/comments',
+    voteBatch:    '/vote/batch',
+    voteCampaign: '/vote/campaign',
+    campaigns:    '/vote/campaigns',
+    vote:         '/iphone/json/api/talkbacks/vote',
   },
 
   // Always route through the local proxy server
@@ -469,11 +505,13 @@ const Config = {
 //  STATE
 // ═══════════════════════════════════════════════════════════════════════════
 const State = {
-  comments:   [],
-  selectedId: null,
-  sort:       'liked',
-  log:        [],
-  connected:  false,
+  comments:        [],
+  selectedId:      null,
+  sort:            'liked',
+  log:             [],
+  connected:       false,
+  remainingLike:   null,
+  remainingDislike: null,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -684,23 +722,48 @@ function stopCapacityAutoRefresh() {
 async function refreshRemainingForTalkback(talkbackId) {
   if (!talkbackId) { await refreshProxyCapacity(); return; }
   try {
-    const r = await fetch(`${SERVER_BASE}/api/proxy_remaining/${talkbackId}`, { cache: 'no-store' });
-    if (!r.ok) { await refreshProxyCapacity(); return; }
-    const d = await r.json();
-    const remaining = d.remaining ?? 0;
-    const used      = d.used_ok   ?? 0;
-    const total     = d.pool_total ?? 0;
-    const newMax = Math.max(remaining, 1);
+    const [rL, rD] = await Promise.all([
+      fetch(`${SERVER_BASE}/api/proxy_remaining/${talkbackId}?like=true`,  { cache: 'no-store' }).then(r => r.json()),
+      fetch(`${SERVER_BASE}/api/proxy_remaining/${talkbackId}?like=false`, { cache: 'no-store' }).then(r => r.json()),
+    ]);
+    const remL  = rL.remaining  ?? 0;
+    const remD  = rD.remaining  ?? 0;
+    const usedL = rL.used_ok    ?? 0;
+    const usedD = rD.used_ok    ?? 0;
+    const total = rL.pool_total ?? 0;
+
+    // Default slider to like remaining; updates to dislike when hovering that button
+    const newMax = Math.max(remL, 1);
     const slider   = document.getElementById('slider');
     const numInput = document.getElementById('countInput');
     if (slider)   slider.max   = newMax;
     if (numInput) numInput.max = newMax;
     Config.maxVotes = newMax;
-    // Clamp current value if it now exceeds the fresh pool
     syncCount(document.getElementById('countInput').value);
+
     const hint = document.getElementById('capacityHint');
-    if (hint) hint.textContent = `· ${total} proxies · ${used} used for #${talkbackId} · ${remaining} fresh`;
-    addLog('sys', `Talkback #${talkbackId}: ${remaining} fresh proxies, ${used} already voted`);
+    if (hint) hint.textContent = `· ${total} proxies · 👍 ${remL} fresh · 👎 ${remD} fresh`;
+
+    // Block vote buttons when no fresh proxies are left for that type
+    const btnLike    = document.getElementById('btnLike');
+    const btnDislike = document.getElementById('btnDislike');
+    if (btnLike && State.selectedId === talkbackId) {
+      btnLike.disabled = remL <= 0;
+      btnLike.title    = remL <= 0 ? 'No fresh proxies left for likes on this comment' : '';
+    }
+    if (btnDislike && State.selectedId === talkbackId) {
+      btnDislike.disabled = remD <= 0;
+      btnDislike.title    = remD <= 0 ? 'No fresh proxies left for dislikes on this comment' : '';
+    }
+
+    State.remainingLike    = remL;
+    State.remainingDislike = remD;
+    if (State.selectedId === talkbackId) {
+      const c = State.comments.find(x => x.id === talkbackId);
+      if (c) updateSelectedBox(c);
+    }
+
+    addLog('sys', `Talkback #${talkbackId}: 👍 ${remL} fresh (${usedL} used) · 👎 ${remD} fresh (${usedD} used)`);
   } catch (e) { await refreshProxyCapacity(); }
 }
 
@@ -839,7 +902,9 @@ function renderComments() {
 }
 
 async function selectComment(id, scroll = true) {
-  State.selectedId = id;
+  State.selectedId      = id;
+  State.remainingLike    = null;
+  State.remainingDislike = null;
   localStorage.setItem(SELECTED_ID_KEY, String(id));
   const c = State.comments.find(x => x.id === id);
   if (!c) return;
@@ -860,7 +925,11 @@ async function selectComment(id, scroll = true) {
 }
 
 function updateSelectedBox(c) {
-  const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const now  = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const remL = State.remainingLike    != null ? State.remainingLike    : '…';
+  const remD = State.remainingDislike != null ? State.remainingDislike : '…';
+  const colL = (typeof remL === 'number' && remL <= 0) ? 'var(--dislike)' : 'var(--like)';
+  const colD = (typeof remD === 'number' && remD <= 0) ? 'var(--dislike)' : 'var(--warn)';
   document.getElementById('selectedBox').className = 'selected-box';
   document.getElementById('selectedBox').innerHTML = `
     <div class="prev-author">${esc(c.author) || 'אנונימי'}</div>
@@ -871,6 +940,10 @@ function updateSelectedBox(c) {
       <span>👎 ${c.unlikes}</span>
       <span>net ${c.net >= 0 ? '+' : ''}${c.net}</span>
       <span style="opacity:.5;font-size:.7rem">↻ ${now}</span>
+    </div>
+    <div class="prev-meta" style="margin-top:5px;gap:16px">
+      <span style="color:${colL}">👍 fresh: <b>${remL}</b></span>
+      <span style="color:${colD}">👎 fresh: <b>${remD}</b></span>
     </div>`;
 }
 
@@ -969,9 +1042,204 @@ async function silentRefreshComments() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-//  VOTING
+//  TOAST NOTIFICATIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
+function showToast(type, title, sub, durationMs = 6000) {
+  const icons = { like: '👍', dislike: '👎', done: '✅', error: '❌', sys: 'ℹ️' };
+  const tc  = document.getElementById('toastContainer');
+  const el  = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.innerHTML = `<span class="toast-icon">${icons[type] || 'ℹ️'}</span>
+    <div class="toast-body"><div class="toast-title">${title}</div>${sub ? `<div class="toast-sub">${sub}</div>` : ''}</div>`;
+  tc.appendChild(el);
+  setTimeout(() => {
+    el.style.transition = 'opacity .35s';
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 380);
+  }, durationMs);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  CAMPAIGN VOTING  (server-side multi-round, client polls for progress)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const _campaignPollers = {};   // camp_id → intervalId
+const _campaignState   = {};   // camp_id → last known state
+
+function _removeCampCard(card, campId) {
+  if (_campaignPollers[campId]) {
+    clearInterval(_campaignPollers[campId]);
+    delete _campaignPollers[campId];
+  }
+  card.style.transition = 'opacity .35s';
+  card.style.opacity = '0';
+  setTimeout(() => card.remove(), 380);
+}
+
+function _renderRoundDots(camp) {
+  const total = camp.total_rounds || 10;
+  let html = '';
+  for (let i = 1; i <= total; i++) {
+    const rd = (camp.rounds || []).find(r => r.round === i);
+    let cls = '';
+    if (rd && rd.finished_at)      cls = 'done';
+    else if (i === camp.current_round && camp.status === 'running') cls = 'running';
+    else if (i === camp.current_round && camp.status === 'waiting') cls = 'waiting';
+    html += `<span class="camp-round-dot ${cls}" title="Round ${i}${rd ? ': '+rd.ok+' ok' : ''}"></span>`;
+  }
+  return html;
+}
+
+function _formatCountdown(secs) {
+  if (secs == null || secs <= 0) return '';
+  const m = Math.floor(secs / 60), s = secs % 60;
+  return `⏱ Next round in ${m}:${String(s).padStart(2,'0')}`;
+}
+
+async function _pollCampaign(campId, card, like, prevState) {
+  try {
+    const r = await fetch(`${SERVER_BASE}/vote/campaign/${campId}`, { cache: 'no-store' });
+    if (!r.ok) return;
+    const camp = await r.json();
+    const prev = prevState || {};
+    _campaignState[campId] = camp;
+
+    const elLbl       = card.querySelector('.camp-lbl');
+    const elDots      = card.querySelector('.camp-rounds');
+    const elStats     = card.querySelector('.camp-stats');
+    const elCountdown = card.querySelector('.camp-countdown');
+    const elBar       = card.querySelector('.progress-inner');
+
+    // Update round dots
+    if (elDots) elDots.innerHTML = _renderRoundDots(camp);
+
+    // Toast when a round just finished
+    const prevRound = prev.current_round || 0;
+    if (camp.current_round > prevRound && prevRound > 0) {
+      const rd = (camp.rounds || []).find(r => r.round === prevRound);
+      if (rd) {
+        const action = like ? '👍 Like' : '👎 Dislike';
+        showToast(like ? 'like' : 'dislike',
+          `Round ${prevRound}/${camp.total_rounds} complete`,
+          `${action} · ${rd.ok} accepted / ${rd.sent} tried · Total: ${camp.total_ok}`);
+      }
+    }
+
+    // Update progress bar (current round progress)
+    const curRd = (camp.rounds || []).find(r => r.round === camp.current_round);
+    if (curRd && elBar) {
+      const pct = curRd.sent > 0 ? Math.round(curRd.ok / Math.max(curRd.sent, 1) * 100) : 0;
+      elBar.style.width = `${pct}%`;
+    }
+
+    // Update stats
+    if (elStats) {
+      elStats.innerHTML = `<span class="camp-ok">✓ ${camp.total_ok} votes</span>
+        <span class="camp-sent">${camp.total_sent} tried</span>
+        <span class="camp-sent">Round ${camp.current_round}/${camp.total_rounds}</span>`;
+    }
+
+    // Update label & countdown
+    if (camp.status === 'running') {
+      card.className = 'camp-card camp-running';
+      if (elLbl) elLbl.textContent = `Round ${camp.current_round}/${camp.total_rounds} running…`;
+      if (elCountdown) elCountdown.textContent = '';
+    } else if (camp.status === 'waiting') {
+      card.className = 'camp-card camp-waiting';
+      if (elLbl) elLbl.textContent = `Waiting — round ${camp.current_round + 1}/${camp.total_rounds} up next`;
+      if (elCountdown) elCountdown.textContent = _formatCountdown(camp.next_round_in_s);
+    } else if (camp.status === 'done') {
+      card.className = 'camp-card camp-done';
+      if (elLbl) elLbl.textContent = `Done — ${camp.total_ok} votes across ${camp.total_rounds} rounds`;
+      if (elCountdown) elCountdown.textContent = '';
+      if (elBar) { elBar.style.width = '100%'; elBar.style.background = '#22c55e'; }
+      clearInterval(_campaignPollers[campId]);
+      delete _campaignPollers[campId];
+      showToast('done', `Campaign complete`,
+        `${like ? '👍' : '👎'} #${camp.talkback_id} · ${camp.total_ok} total votes accepted`,
+        10000);
+      addLog(like ? 'like' : 'dislike',
+        `Campaign #${campId} done — ${camp.total_ok}/${camp.total_sent} accepted`);
+      silentRefreshComments();
+      setTimeout(() => _removeCampCard(card, campId), 30_000);
+    } else if (camp.status === 'error' || camp.status === 'cancelled') {
+      card.className = 'camp-card camp-error';
+      if (elLbl) elLbl.textContent = camp.error || camp.status;
+      clearInterval(_campaignPollers[campId]);
+      delete _campaignPollers[campId];
+    }
+
+    // Store for next poll comparison
+    card._campPrev = camp;
+  } catch (e) {
+    // Network blip — keep polling
+  }
+}
+
+async function vote(like) {
+  if (!State.selectedId) return;
+  const talkbackId = State.selectedId;
+
+  addLog('action', `Campaign start: ${like ? '👍 Like' : '👎 Dislike'} on #${talkbackId} (10 rounds × 10 min)`,
+    { action: like ? 'like' : 'dislike', talkback_id: talkbackId, articleId: Config.articleId });
+
+  // ── Create campaign card immediately ──────────────────────────────────────
+  const card = document.createElement('div');
+  card.className = 'camp-card camp-running';
+  card.innerHTML = `
+    <div class="camp-header">
+      <span class="camp-icon">${like ? '👍' : '👎'}</span>
+      <span class="camp-tid">#${talkbackId}</span>
+      <span class="camp-lbl">Starting campaign…</span>
+      <button class="camp-close" title="Cancel & dismiss">×</button>
+    </div>
+    <div class="camp-rounds"></div>
+    <div class="progress-outer"><div class="progress-inner"></div></div>
+    <div class="camp-stats"><span class="camp-sent">Starting…</span></div>
+    <div class="camp-countdown"></div>`;
+
+  const container = document.getElementById('voteCards');
+  container.insertBefore(card, container.firstChild);
+
+  // ── POST to server — returns immediately with campaign_id ────────────────
+  let campId;
+  try {
+    const resp = await fetch(`${SERVER_BASE}/vote/campaign`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ article_id: Config.articleId, talkback_id: talkbackId, like }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    campId = data.campaign_id;
+  } catch (e) {
+    card.className = 'camp-card camp-error';
+    card.querySelector('.camp-lbl').textContent = `Failed to start: ${e.message}`;
+    addLog('sys', `Campaign start failed: ${e.message}`);
+    return;
+  }
+
+  showToast(like ? 'like' : 'dislike',
+    `Campaign started`,
+    `${like ? '👍' : '👎'} #${talkbackId} · 10 rounds · 10 min apart`);
+
+  // ── Wire close/cancel button ──────────────────────────────────────────────
+  card.querySelector('.camp-close').addEventListener('click', async () => {
+    if (campId) {
+      try { await fetch(`${SERVER_BASE}/vote/campaign/${campId}`, { method: 'DELETE' }); } catch {}
+    }
+    _removeCampCard(card, campId);
+  });
+
+  // ── Poll every 3 seconds ──────────────────────────────────────────────────
+  await _pollCampaign(campId, card, like, null);
+  _campaignPollers[campId] = setInterval(() => {
+    _pollCampaign(campId, card, like, card._campPrev);
+  }, 3000);
+}
+
+// Legacy: keep _parseSseEvents for any other code that may reference it
 function _parseSseEvents(text) {
   const events = [];
   for (const part of text.split('\n\n')) {
@@ -983,139 +1251,21 @@ function _parseSseEvents(text) {
   return events;
 }
 
-function _removeCard(card) {
-  card.classList.add('vc-fade');
-  setTimeout(() => card.remove(), 380);
-}
-
-async function vote(like) {
-  if (!State.selectedId) return;
-  if (_activeVotes >= 2) {
-    addLog('sys', 'Blocked: max 2 concurrent campaigns (server thread limit). Wait for one to finish.');
-    return;
-  }
-  const count      = parseInt(document.getElementById('countInput').value) || 10;
-  const c          = State.comments.find(x => x.id === State.selectedId);
-  const talkbackId = State.selectedId;
-  ++_voteSeq;
-  _activeVotes++;
-
-  addLog('action', `Click: ${like ? '👍 Like' : '👎 Dislike'} ×${count} on #${talkbackId}`,
-    { action: like ? 'like' : 'dislike', count, talkback_id: talkbackId, articleId: Config.articleId });
-
-  // ── Build a new card for this vote ──────────────────────────────────────
-  const card = document.createElement('div');
-  card.className = 'vote-card';
-  card.innerHTML = `
-    <div class="vc-header">
-      <span class="vc-icon">${like ? '👍' : '👎'}</span>
-      <span class="vc-tid">#${talkbackId}</span>
-      <span class="vc-lbl">×${count} — starting…</span>
-      <button class="vc-close" title="Dismiss">×</button>
-    </div>
-    <div class="progress-outer"><div class="progress-inner"></div></div>
-    <div class="vc-stats">
-      <span class="vc-sent">0/${count}</span>
-      <span class="vc-sep">·</span>
-      <span class="vc-ok">✓ 0</span>
-      <span class="vc-sep">·</span>
-      <span class="vc-err">✗ 0</span>
-      <span class="vc-fresh"></span>
-    </div>`;
-
-  const container = document.getElementById('voteCards');
-  container.insertBefore(card, container.firstChild);
-
-  // DOM refs scoped to this card
-  const elLbl   = card.querySelector('.vc-lbl');
-  const elBar   = card.querySelector('.progress-inner');
-  const elSent  = card.querySelector('.vc-sent');
-  const elOk    = card.querySelector('.vc-ok');
-  const elErr   = card.querySelector('.vc-err');
-  const elFresh = card.querySelector('.vc-fresh');
-  const elClose = card.querySelector('.vc-close');
-  elClose.addEventListener('click', () => _removeCard(card));
-
-  function _updateProgress(s, o, e, n) {
-    // Bar tracks accepted/target (goal progress), not sent/target
-    elBar.style.width  = `${Math.round((o / n) * 100)}%`;
-    elSent.textContent = `${s} tried`;
-    elOk.textContent   = `✓ ${o}/${n}`;
-    elErr.textContent  = `✗ ${e}`;
-  }
-
-  // ── Fire the vote request ────────────────────────────────────────────────
-  const abort = new AbortController();
-  const abortTimer = setTimeout(() => abort.abort(), 300_000);
-
-  try {
-    const resp = await fetch(Config.url('voteBatch'), {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ article_id: Config.articleId, talkback_id: talkbackId, count, like }),
-      signal:  abort.signal,
-    });
-
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${await resp.text()}`);
-
-    let last = null;
-
-    if (resp.body && typeof resp.body.getReader === 'function') {
-      const reader = resp.body.getReader();
-      const dec = new TextDecoder();
-      let buf = '';
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buf += dec.decode(value, { stream: true });
-        const parts = buf.split('\n\n');
-        buf = parts.pop();
-        for (const d of _parseSseEvents(parts.join('\n\n'))) {
-          last = d;
-          if (d.t === 'p') _updateProgress(d.s, d.o, d.e, d.n);
-        }
-      }
-    } else {
-      elLbl.textContent = `×${count} — voting…`;
-      const text = await resp.text();
-      for (const d of _parseSseEvents(text)) { last = d; }
-    }
-
-    if (last && last.t === 'done') {
-      addLog(like ? 'like' : 'dislike', `#${talkbackId} — ${last.o}/${last.s} accepted`);
-      _updateProgress(last.s, last.o, last.e, last.n);
-      elBar.style.width      = '100%';
-      elBar.style.background = last.o > 0 ? 'var(--like)' : 'var(--dislike)';
-      elLbl.textContent      = `Done — ${last.o} accepted`;
-      const rem  = last.remaining ?? last.pool_size;
-      const hf   = last.hard_fail ?? 0;
-      if (rem != null) elFresh.textContent = hf > 0 ? `${rem} fresh · ${hf} rejected` : `${rem} fresh`;
-      card.classList.add('vc-done');
-      setTimeout(() => _removeCard(card), 12_000);
-    }
-
-  } catch (e) {
-    elBar.style.width      = '100%';
-    elBar.style.background = 'var(--dislike)';
-    elLbl.textContent      = `Error: ${e.message}`;
-    card.classList.add('vc-error');
-    addLog('sys', `Vote #${talkbackId} failed: ${e.message}`);
-  } finally {
-    clearTimeout(abortTimer);
-  }
-
-  _activeVotes--;
-  if (_activeVotes === 0) {
-    // Kick an immediate refresh so counts update right after voting,
-    // without waiting for the next scheduled tick.
-    silentRefreshComments();
-    refreshRemainingForTalkback(talkbackId).catch(() => {});
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 //  CONTROLS
 // ═══════════════════════════════════════════════════════════════════════════
+function syncSliderForType(like) {
+  const rem = like ? State.remainingLike : State.remainingDislike;
+  if (rem == null) return;
+  const m = Math.max(rem, 1);
+  const slider   = document.getElementById('slider');
+  const numInput = document.getElementById('countInput');
+  if (slider)   slider.max   = m;
+  if (numInput) numInput.max = m;
+  Config.maxVotes = m;
+  syncCount(numInput ? numInput.value : 1);
+}
+
 function syncCount(v) {
   const prev = parseInt(document.getElementById('countInput').value) || null;
   v = Math.min(Config.maxVotes, Math.max(1, parseInt(v) || 1));
@@ -1477,5 +1627,6 @@ function proxyPage(dir) {
   // No auto-refresh — user controls refresh manually via button.
 })();
 </script>
+<div id="toastContainer"></div>
 </body>
 </html>
