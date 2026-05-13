@@ -448,8 +448,10 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
         sum_talkbacks = None
         try:
             for page in range(1, 51):
+                # ?_=timestamp busts Akamai's CDN cache (confirmed via response headers).
+                # Origin still has its own ~100s cache — this is the irreducible minimum.
                 url = (f"{YNET_BASE}/iphone/json/api/talkbacks/list/v2"
-                       f"/{article_id}/0/{page}")
+                       f"/{article_id}/0/{page}?_={int(time.time())}")
                 hdrs = {**PROXY_HEADERS, "Cache-Control": "no-cache", "Pragma": "no-cache"}
                 r = req.get(url, headers=hdrs, timeout=10)
                 r.raise_for_status()

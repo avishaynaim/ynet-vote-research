@@ -4,7 +4,7 @@
     "port": 5001
   },
   "proxies_file": "proxies/alive.json",
-  "cache_ttl_seconds": 87,
+  "cache_ttl_seconds": 10,
   "max_batch_votes": 999999,
   "proxy_timeout": 8,
   "proxy_workers": 80,
