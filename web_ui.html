@@ -1102,66 +1102,37 @@ async function _pollCampaign(campId, card, like, prevState) {
     const r = await fetch(`${SERVER_BASE}/vote/campaign/${campId}`, { cache: 'no-store' });
     if (!r.ok) return;
     const camp = await r.json();
-    const prev = prevState || {};
     _campaignState[campId] = camp;
 
-    const elLbl       = card.querySelector('.camp-lbl');
-    const elDots      = card.querySelector('.camp-rounds');
-    const elStats     = card.querySelector('.camp-stats');
-    const elCountdown = card.querySelector('.camp-countdown');
-    const elBar       = card.querySelector('.progress-inner');
+    const elLbl   = card.querySelector('.camp-lbl');
+    const elStats = card.querySelector('.camp-stats');
+    const elBar   = card.querySelector('.progress-inner');
+    const total   = camp.proxy_count || camp.total_sent || 1;
+    const pct     = Math.round((camp.total_sent / total) * 100);
 
-    // Update round dots
-    if (elDots) elDots.innerHTML = _renderRoundDots(camp);
+    if (elBar) elBar.style.width = `${Math.min(pct, 100)}%`;
 
-    // Toast when a round just finished
-    const prevRound = prev.current_round || 0;
-    if (camp.current_round > prevRound && prevRound > 0) {
-      const rd = (camp.rounds || []).find(r => r.round === prevRound);
-      if (rd) {
-        const action = like ? '👍 Like' : '👎 Dislike';
-        showToast(like ? 'like' : 'dislike',
-          `Round ${prevRound}/${camp.total_rounds} complete`,
-          `${action} · ${rd.ok} accepted / ${rd.sent} tried · Total: ${camp.total_ok}`);
-      }
-    }
-
-    // Update progress bar (current round progress)
-    const curRd = (camp.rounds || []).find(r => r.round === camp.current_round);
-    if (curRd && elBar) {
-      const pct = curRd.sent > 0 ? Math.round(curRd.ok / Math.max(curRd.sent, 1) * 100) : 0;
-      elBar.style.width = `${pct}%`;
-    }
-
-    // Update stats
     if (elStats) {
-      elStats.innerHTML = `<span class="camp-ok">✓ ${camp.total_ok} votes</span>
-        <span class="camp-sent">${camp.total_sent} tried</span>
-        <span class="camp-sent">Round ${camp.current_round}/${camp.total_rounds}</span>`;
+      elStats.innerHTML = `<span class="camp-ok">✓ ${camp.total_ok} accepted</span>
+        <span class="camp-sent">${camp.total_sent}/${total} proxies</span>`;
     }
 
-    // Update label & countdown
     if (camp.status === 'running') {
       card.className = 'camp-card camp-running';
-      if (elLbl) elLbl.textContent = `Round ${camp.current_round}/${camp.total_rounds} running…`;
-      if (elCountdown) elCountdown.textContent = '';
-    } else if (camp.status === 'waiting') {
-      card.className = 'camp-card camp-waiting';
-      if (elLbl) elLbl.textContent = `Waiting — round ${camp.current_round + 1}/${camp.total_rounds} up next`;
-      if (elCountdown) elCountdown.textContent = _formatCountdown(camp.next_round_in_s);
+      if (elLbl) elLbl.textContent = `Running — ${camp.total_sent}/${total} sent…`;
     } else if (camp.status === 'done') {
       card.className = 'camp-card camp-done';
-      if (elLbl) elLbl.textContent = `Done — ${camp.total_ok} votes across ${camp.total_rounds} rounds`;
-      if (elCountdown) elCountdown.textContent = '';
+      if (elLbl) elLbl.textContent = `Done — ${camp.total_ok}/${camp.total_sent} accepted`;
       if (elBar) { elBar.style.width = '100%'; elBar.style.background = '#22c55e'; }
       clearInterval(_campaignPollers[campId]);
       delete _campaignPollers[campId];
-      showToast('done', `Campaign complete`,
-        `${like ? '👍' : '👎'} #${camp.talkback_id} · ${camp.total_ok} total votes accepted`,
+      showToast('done', `Done`,
+        `${like ? '👍' : '👎'} #${camp.talkback_id} · ${camp.total_ok} accepted / ${camp.total_sent} tried`,
         10000);
       addLog(like ? 'like' : 'dislike',
         `Campaign #${campId} done — ${camp.total_ok}/${camp.total_sent} accepted`);
       silentRefreshComments();
+      refreshRemainingForTalkback(camp.talkback_id).catch(() => {});
       setTimeout(() => _removeCampCard(card, campId), 30_000);
     } else if (camp.status === 'error' || camp.status === 'cancelled') {
       card.className = 'camp-card camp-error';
@@ -1170,7 +1141,6 @@ async function _pollCampaign(campId, card, like, prevState) {
       delete _campaignPollers[campId];
     }
 
-    // Store for next poll comparison
     card._campPrev = camp;
   } catch (e) {
     // Network blip — keep polling
@@ -1180,9 +1150,10 @@ async function _pollCampaign(campId, card, like, prevState) {
 async function vote(like) {
   if (!State.selectedId) return;
   const talkbackId = State.selectedId;
+  const count = parseInt(document.getElementById('countInput').value) || 0;
 
-  addLog('action', `Campaign start: ${like ? '👍 Like' : '👎 Dislike'} on #${talkbackId} (10 rounds × 10 min)`,
-    { action: like ? 'like' : 'dislike', talkback_id: talkbackId, articleId: Config.articleId });
+  addLog('action', `Campaign: ${like ? '👍 Like' : '👎 Dislike'} #${talkbackId} · ${count || 'all fresh'} proxies`,
+    { action: like ? 'like' : 'dislike', talkback_id: talkbackId, count, articleId: Config.articleId });
 
   // ── Create campaign card immediately ──────────────────────────────────────
   const card = document.createElement('div');
@@ -1191,24 +1162,22 @@ async function vote(like) {
     <div class="camp-header">
       <span class="camp-icon">${like ? '👍' : '👎'}</span>
       <span class="camp-tid">#${talkbackId}</span>
-      <span class="camp-lbl">Starting campaign…</span>
+      <span class="camp-lbl">Starting…</span>
       <button class="camp-close" title="Cancel & dismiss">×</button>
     </div>
-    <div class="camp-rounds"></div>
     <div class="progress-outer"><div class="progress-inner"></div></div>
-    <div class="camp-stats"><span class="camp-sent">Starting…</span></div>
-    <div class="camp-countdown"></div>`;
+    <div class="camp-stats"><span class="camp-sent">Queuing proxies…</span></div>`;
 
   const container = document.getElementById('voteCards');
   container.insertBefore(card, container.firstChild);
 
-  // ── POST to server — returns immediately with campaign_id ────────────────
+  // ── POST to server ───────────────────────────────────────────────────────
   let campId;
   try {
     const resp = await fetch(`${SERVER_BASE}/vote/campaign`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ article_id: Config.articleId, talkback_id: talkbackId, like }),
+      body:    JSON.stringify({ article_id: Config.articleId, talkback_id: talkbackId, like, count }),
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
@@ -1220,11 +1189,9 @@ async function vote(like) {
     return;
   }
 
-  showToast(like ? 'like' : 'dislike',
-    `Campaign started`,
-    `${like ? '👍' : '👎'} #${talkbackId} · 10 rounds · 10 min apart`);
+  showToast(like ? 'like' : 'dislike', `Campaign started`,
+    `${like ? '👍' : '👎'} #${talkbackId} · ${count || 'all fresh'} proxies · single pass`);
 
-  // ── Wire close/cancel button ──────────────────────────────────────────────
   card.querySelector('.camp-close').addEventListener('click', async () => {
     if (campId) {
       try { await fetch(`${SERVER_BASE}/vote/campaign/${campId}`, { method: 'DELETE' }); } catch {}
@@ -1232,7 +1199,6 @@ async function vote(like) {
     _removeCampCard(card, campId);
   });
 
-  // ── Poll every 3 seconds ──────────────────────────────────────────────────
   await _pollCampaign(campId, card, like, null);
   _campaignPollers[campId] = setInterval(() => {
     _pollCampaign(campId, card, like, card._campPrev);

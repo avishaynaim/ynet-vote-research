@@ -104,18 +104,24 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
     jitter_max = float(cfg.get("vote_jitter_max_s", 10.0))
     log_lock = threading.Lock()
     pool_lock = threading.Lock()
-    # Limit concurrent vote-batch campaigns so threads don't pile up past proot's limit.
-    _campaign_sem = threading.Semaphore(2)
+    # Allow up to 10 parallel campaigns — single-pass campaigns finish fast so
+    # thread count stays bounded. Each campaign uses proxy_workers threads max.
+    _campaign_sem = threading.Semaphore(10)
     failure_counts = {}   # proxy_url -> consecutive failure count
     EVICT_AFTER = 3       # remove proxy after this many consecutive failures
     MIN_POOL    = 5       # never evict below this size
     from collections import defaultdict
-    votes_ok_by_talkback   = defaultdict(set)  # (talkback_id, like) -> proxies that got 200
-    votes_hard_fail        = defaultdict(set)  # (talkback_id, like) -> proxies ynet rejected (non-200, non-403)
+    votes_ok_by_talkback = defaultdict(set)  # (talkback_id, like) -> proxies that got 200
+    votes_hard_fail      = defaultdict(set)  # (talkback_id, like) -> proxies ynet rejected (non-200, non-403)
 
-    # ── Multi-round campaign infrastructure ──────────────────────────────────
-    CAMPAIGN_ROUNDS  = 10
-    CAMPAIGN_DELAY_S = 600   # 10-minute gap between rounds
+    # ── Cyclic proxy cursor — per (talkback_id, like) ────────────────────────
+    # Tracks where in the proxy pool each comment's next campaign should start.
+    # Campaigns are single-pass: use N proxies from cursor, advance cursor by N.
+    # Wraps around when it reaches the end of the pool (cyclic).
+    _proxy_cursors: dict = {}   # (talkback_id, like) → int index into proxy_pool
+    _cursor_lock = threading.Lock()
+
+    # ── Campaign infrastructure ───────────────────────────────────────────────
     _campaigns: dict = {}    # camp_id → state dict
     _camp_lock = threading.Lock()
 
@@ -161,89 +167,106 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
                     "elapsed": round(time.time() - t0, 2)}
 
     def _campaign_runner(camp_id):
-        """Background thread: runs 10 rounds with 10-min gaps, fully decoupled from HTTP."""
-        camp      = _campaigns[camp_id]
-        vote_url  = f"{YNET_BASE}/iphone/json/api/talkbacks/vote"
-        vote_log  = os.path.join(results_dir, "vote_log.jsonl")
+        """Single-pass campaign: fire all selected proxies once, cyclic cursor per comment."""
+        camp     = _campaigns[camp_id]
+        vote_url = f"{YNET_BASE}/iphone/json/api/talkbacks/vote"
+        vote_log = os.path.join(results_dir, "vote_log.jsonl")
 
         if not _campaign_sem.acquire(blocking=True, timeout=10):
             with _camp_lock:
                 camp["status"] = "error"
-                camp["error"]  = "server busy — max 2 concurrent campaigns"
+                camp["error"]  = "server busy — max 10 concurrent campaigns"
             return
 
         try:
-            for rn in range(1, CAMPAIGN_ROUNDS + 1):
+            with _camp_lock:
+                if camp["status"] == "cancelled":
+                    return
+                camp["status"] = "running"
+                rd = {"sent": 0, "ok": 0, "errors": 0,
+                      "started_at": datetime.now().isoformat(), "finished_at": None}
+                camp["rounds"] = [rd]
+
+            tid   = camp["talkback_id"]
+            aid   = camp["article_id"]
+            like  = camp["like"]
+            count = camp.get("count", 0)  # 0 = all fresh
+
+            payload = {
+                "article_id":      aid,
+                "talkback_id":     tid,
+                "talkback_like":   like,
+                "talkback_unlike": not like,
+                "vote_type":       "2state",
+            }
+
+            # Snapshot current pool
+            with pool_lock:
+                snap = list(proxy_pool)
+
+            if not snap:
                 with _camp_lock:
-                    if camp["status"] == "cancelled":
-                        return
-                    camp["status"]        = "running"
-                    camp["current_round"] = rn
-                    rd = {"round": rn, "sent": 0, "ok": 0, "errors": 0,
-                          "started_at": datetime.now().isoformat(), "finished_at": None}
-                    camp["rounds"].append(rd)
+                    camp["status"] = "done"
+                    camp["finished_at"] = datetime.now().isoformat()
+                return
 
-                tid  = camp["talkback_id"]
-                aid  = camp["article_id"]
-                like = camp["like"]
-                payload = {
-                    "article_id":      aid,
-                    "talkback_id":     tid,
-                    "talkback_like":   like,
-                    "talkback_unlike": not like,
-                    "vote_type":       "2state",
-                }
+            # Get cyclic cursor for this (comment, type)
+            key = (tid, like)
+            with _cursor_lock:
+                cursor = _proxy_cursors.get(key, 0) % len(snap)
 
-                with pool_lock:
-                    snap = list(proxy_pool)
-                ok_set   = votes_ok_by_talkback.get((tid, like), set())
-                fail_set = votes_hard_fail.get((tid, like), set())
-                fresh    = [p for p in snap
-                            if p["proxies"]["http"] not in ok_set
-                            and p["proxies"]["http"] not in fail_set]
-                picks = fresh if fresh else snap
-                if not picks:
-                    rd["finished_at"] = datetime.now().isoformat()
-                    continue
+            # Build ordered pool starting from cursor (cyclic)
+            ordered = snap[cursor:] + snap[:cursor]
 
-                workers = min(proxy_workers, len(picks))
-                with ThreadPoolExecutor(max_workers=workers) as ex:
-                    futs = [ex.submit(_cast_one, e, payload, vote_url, tid, like)
-                            for e in picks]
-                    for fut in as_completed(futs):
-                        res = fut.result()
-                        with _camp_lock:
-                            rd["sent"]   += 1
-                            rd["ok"]     += 1 if res["ok"] else 0
-                            rd["errors"] += 0 if res["ok"] else 1
-                            camp["total_ok"]   = sum(r["ok"]   for r in camp["rounds"])
-                            camp["total_sent"] = sum(r["sent"] for r in camp["rounds"])
-                        rec = {
-                            "ts": datetime.now().isoformat(timespec="milliseconds"),
-                            "campaign": camp_id, "round": rn,
-                            "proxy": res["proxy"], "addr": res["addr"],
-                            "talkback_id": tid, "article_id": aid,
-                            "like": like, "status": res["status"],
-                            "ok": res["ok"], "elapsed_s": res["elapsed"],
-                        }
-                        with log_lock:
-                            with open(vote_log, "a") as f:
-                                f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            # Filter out proxies that already voted on this (comment, type)
+            ok_set = votes_ok_by_talkback.get(key, set())
+            fresh  = [p for p in ordered if p["proxies"]["http"] not in ok_set]
 
-                rd["finished_at"] = datetime.now().isoformat()
+            # Limit to count if specified, else use all fresh
+            picks = fresh[:count] if count > 0 else fresh
 
-                if rn < CAMPAIGN_ROUNDS:
-                    next_at = datetime.now() + timedelta(seconds=CAMPAIGN_DELAY_S)
+            # Advance cursor by how many we'll fire (even if they fail — avoids
+            # hammering the same dead proxies every campaign on this comment)
+            with _cursor_lock:
+                _proxy_cursors[key] = (cursor + len(picks)) % len(snap)
+
+            camp["proxy_count"] = len(picks)
+            camp["cursor_start"] = cursor
+
+            if not picks:
+                with _camp_lock:
+                    camp["status"] = "done"
+                    camp["finished_at"] = datetime.now().isoformat()
+                return
+
+            workers = min(proxy_workers, len(picks))
+            with ThreadPoolExecutor(max_workers=workers) as ex:
+                futs = [ex.submit(_cast_one, e, payload, vote_url, tid, like)
+                        for e in picks]
+                for fut in as_completed(futs):
                     with _camp_lock:
-                        camp["status"]        = "waiting"
-                        camp["next_round_at"] = next_at.isoformat()
-                    # Sleep in 5-s ticks so cancellation is responsive
-                    for _ in range(CAMPAIGN_DELAY_S // 5):
-                        time.sleep(5)
-                        with _camp_lock:
-                            if camp["status"] == "cancelled":
-                                return
+                        if camp["status"] == "cancelled":
+                            break
+                    res = fut.result()
+                    with _camp_lock:
+                        rd["sent"]   += 1
+                        rd["ok"]     += 1 if res["ok"] else 0
+                        rd["errors"] += 0 if res["ok"] else 1
+                        camp["total_ok"]   = rd["ok"]
+                        camp["total_sent"] = rd["sent"]
+                    rec = {
+                        "ts": datetime.now().isoformat(timespec="milliseconds"),
+                        "campaign": camp_id,
+                        "proxy": res["proxy"], "addr": res["addr"],
+                        "talkback_id": tid, "article_id": aid,
+                        "like": like, "status": res["status"],
+                        "ok": res["ok"], "elapsed_s": res["elapsed"],
+                    }
+                    with log_lock:
+                        with open(vote_log, "a") as f:
+                            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
+            rd["finished_at"] = datetime.now().isoformat()
             with _camp_lock:
                 if camp["status"] != "cancelled":
                     camp["status"]      = "done"
@@ -791,23 +814,24 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
         talkback_id = int(body.get("talkback_id", 0))
         article_id  = body.get("article_id", DEFAULT_ARTICLE)
         like        = bool(body.get("like", True))
+        count       = int(body.get("count", 0))   # 0 = all fresh proxies
         if not talkback_id:
             return cors(make_response(jsonify({"error": "talkback_id required"}), 400))
         camp_id = f"camp_{uuid.uuid4().hex[:8]}"
         camp = {
-            "id":            camp_id,
-            "talkback_id":   talkback_id,
-            "article_id":    article_id,
-            "like":          like,
-            "total_rounds":  CAMPAIGN_ROUNDS,
-            "current_round": 0,
-            "status":        "starting",
-            "next_round_at": None,
-            "rounds":        [],
-            "total_ok":      0,
-            "total_sent":    0,
-            "created_at":    datetime.now().isoformat(),
-            "finished_at":   None,
+            "id":          camp_id,
+            "talkback_id": talkback_id,
+            "article_id":  article_id,
+            "like":        like,
+            "count":       count,
+            "status":      "starting",
+            "rounds":      [],
+            "total_ok":    0,
+            "total_sent":  0,
+            "proxy_count": 0,
+            "cursor_start":0,
+            "created_at":  datetime.now().isoformat(),
+            "finished_at": None,
         }
         with _camp_lock:
             _campaigns[camp_id] = camp
@@ -841,12 +865,23 @@ def create_app(cfg: dict, base_dir: str) -> Flask:
         with _camp_lock:
             result = [{"id": c["id"], "talkback_id": c["talkback_id"],
                        "like": c["like"], "status": c["status"],
-                       "current_round": c["current_round"],
-                       "total_rounds": c["total_rounds"],
                        "total_ok": c["total_ok"], "total_sent": c["total_sent"],
+                       "proxy_count": c.get("proxy_count", 0),
                        "created_at": c["created_at"]}
                       for c in _campaigns.values()]
         return cors(jsonify(result))
+
+    @app.route("/api/cursors", methods=["GET", "OPTIONS"])
+    def api_cursors():
+        """Return current cyclic cursor positions for all (talkback, type) pairs."""
+        if request.method == "OPTIONS":
+            return preflight()
+        with pool_lock:
+            pool_size = len(proxy_pool)
+        with _cursor_lock:
+            data = [{"talkback_id": tid, "like": like, "cursor": cur, "pool_size": pool_size}
+                    for (tid, like), cur in _proxy_cursors.items()]
+        return cors(jsonify({"cursors": data, "pool_size": pool_size}))
 
     @app.route("/vote/campaign/<camp_id>", methods=["DELETE", "OPTIONS"])
     def cancel_campaign(camp_id):

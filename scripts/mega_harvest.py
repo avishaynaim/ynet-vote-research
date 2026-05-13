@@ -277,6 +277,45 @@ GITHUB_SOURCES = [
     ("roma8ok_s5",     "socks5", "https://raw.githubusercontent.com/roma8ok/proxy-list/main/proxy-list-socks5.txt"),
     # ── sunny9577 combined proxies.txt (all protocols, 1513 IPs, overlaps generated/) ──
     ("sunny_all",      "http",   "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/proxies.txt"),
+    # ── BlackSnowDot — updated every minute ──
+    ("blacksnow_http", "http",   "https://raw.githubusercontent.com/BlackSnowDot/proxylist-update-every-minute/main/http.txt"),
+    ("blacksnow_https","http",   "https://raw.githubusercontent.com/BlackSnowDot/proxylist-update-every-minute/main/https.txt"),
+    ("blacksnow_socks","socks5", "https://raw.githubusercontent.com/BlackSnowDot/proxylist-update-every-minute/main/socks.txt"),
+    # ── Bardiafa ──
+    ("bardiafa_http",  "http",   "https://raw.githubusercontent.com/Bardiafa/Proxy-List/main/Proxies.txt"),
+    # ── complexorganizations proxy registry ──
+    ("complex_http",   "http",   "https://raw.githubusercontent.com/complexorganizations/proxy-registry/main/assets/proxies/http.txt"),
+    ("complex_s4",     "socks4", "https://raw.githubusercontent.com/complexorganizations/proxy-registry/main/assets/proxies/socks4.txt"),
+    ("complex_s5",     "socks5", "https://raw.githubusercontent.com/complexorganizations/proxy-registry/main/assets/proxies/socks5.txt"),
+    # ── andigwandi ──
+    ("andigwandi_all", "http",   "https://raw.githubusercontent.com/andigwandi/free-proxy/main/proxy_list.txt"),
+    # ── Hexacluster ──
+    ("hexacluster_http","http",  "https://raw.githubusercontent.com/HexaCluster/proxy-list/main/http.txt"),
+    ("hexacluster_s5", "socks5", "https://raw.githubusercontent.com/HexaCluster/proxy-list/main/socks5.txt"),
+    # ── philip8 auto-proxy ──
+    ("philip8_http",   "http",   "https://raw.githubusercontent.com/philip8/auto-proxy/main/http.txt"),
+    ("philip8_s5",     "socks5", "https://raw.githubusercontent.com/philip8/auto-proxy/main/socks5.txt"),
+    # ── yuceltoluyag ──
+    ("yucelt_http",    "http",   "https://raw.githubusercontent.com/yuceltoluyag/proxy-list/main/raw.txt"),
+    # ── Tsprngs ──
+    ("tsprngs_http",   "http",   "https://raw.githubusercontent.com/Tsprngs/proxy-list/main/http.txt"),
+    ("tsprngs_s5",     "socks5", "https://raw.githubusercontent.com/Tsprngs/proxy-list/main/socks5.txt"),
+    # ── officialerror ──
+    ("offerror_http",  "http",   "https://raw.githubusercontent.com/officialerror/proxy-list/main/http.txt"),
+    ("offerror_s5",    "socks5", "https://raw.githubusercontent.com/officialerror/proxy-list/main/socks5.txt"),
+    # ── monosans no-auth ──
+    ("monosans_noauth","http",   "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies_anonymous/http.txt"),
+    # ── UserR3X (full list) ──
+    ("userr3x_all",    "http",   "https://raw.githubusercontent.com/UserR3X/proxy-list/main/online/all.txt"),
+    # ── opsec ──
+    ("opsec_http",     "http",   "https://raw.githubusercontent.com/ALIILAPRO/Proxy/main/http.txt"),
+    ("opsec_s5",       "socks5", "https://raw.githubusercontent.com/ALIILAPRO/Proxy/main/socks5.txt"),
+    # ── vakhov extra ──
+    ("vakhov_all",     "http",   "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/proxylist.txt"),
+    # ── zevtyardt extra branches ──
+    ("zevty_all",      "http",   "https://raw.githubusercontent.com/zevtyardt/proxy-list/main/all.txt"),
+    # ── hendrikbgr extra ──
+    ("hendrik3_http",  "http",   "https://raw.githubusercontent.com/hendrikbgr/Free-Proxy-Repo/master/proxy_list.txt"),
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════
