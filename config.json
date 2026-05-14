@@ -3,7 +3,7 @@
     "host": "127.0.0.1",
     "port": 5001
   },
-  "proxies_file": "proxies/alive.json",
+  "proxies_file": "proxies/master_pool.json",
   "cache_ttl_seconds": 10,
   "max_batch_votes": 999999,
   "proxy_timeout": 8,

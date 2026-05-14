@@ -22,6 +22,9 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 
+import asyncio
+import aiohttp
+from aiohttp_socks import ProxyConnector as _ProxyConnector
 import requests as req_lib
 import sys as _sys
 _sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -33,9 +36,10 @@ MASTER = os.path.join(REPO, "proxies", "master_pool.json")
 ALIVE  = os.path.join(REPO, "proxies", "alive.json")
 
 # ── Tuning ─────────────────────────────────────────────────────────────────
-CYCLE_MINUTES   = 5     # sleep between cycles
-WORKERS         = 120   # thread-pool workers — stays under proot 150-thread limit
-PROBE_TIMEOUT   = 7.0   # per-proxy timeout seconds (5s was too short, killed good proxies)
+CYCLE_MINUTES     = 5     # sleep between cycles
+WORKERS           = 120   # thread-pool workers for fetch phase (not probe)
+PROBE_TIMEOUT     = 7.0   # per-proxy timeout seconds (5s was too short, killed good proxies)
+ASYNC_CONCURRENCY = 1500  # concurrent async probes — no thread-limit constraint
 RESAMPLE_SIZE   = 400   # existing master entries to re-validate per cycle — KEEP LOW
                         # high values destroy the pool during network outages
 MIN_SURVIVORS   = 30    # refuse to overwrite alive.json below this
@@ -261,6 +265,66 @@ URL_TO_SOURCE = {
     "https://raw.githubusercontent.com/roma8ok/proxy-list/main/proxy-list-socks5.txt": "roma8ok_s5",
     # sunny9577 combined proxies.txt (all protocols, 1513 IPs)
     "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/proxies.txt": "sunny_all",
+    # ── VPSLabCloud ──────────────────────────────────────────────────────────
+    "https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/http_all.txt":   "vpslab_http",
+    "https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/socks4_all.txt": "vpslab_s4",
+    "https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/socks5_all.txt": "vpslab_s5",
+    # ── gfpcom wiki ──────────────────────────────────────────────────────────
+    "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/http.txt":   "gfpcom_http",
+    "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/socks4.txt": "gfpcom_s4",
+    "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/socks5.txt": "gfpcom_s5",
+    # ── ClearProxy ───────────────────────────────────────────────────────────
+    "https://raw.githubusercontent.com/ClearProxy/checked-proxy-list/main/http/raw/all.txt":   "clearproxy_http",
+    "https://raw.githubusercontent.com/ClearProxy/checked-proxy-list/main/socks4/raw/all.txt": "clearproxy_s4",
+    "https://raw.githubusercontent.com/ClearProxy/checked-proxy-list/main/socks5/raw/all.txt": "clearproxy_s5",
+    # ── Thordata ─────────────────────────────────────────────────────────────
+    "https://raw.githubusercontent.com/Thordata/awesome-free-proxy-list/main/proxies/http.txt":   "thordata_http",
+    "https://raw.githubusercontent.com/Thordata/awesome-free-proxy-list/main/proxies/socks4.txt": "thordata_s4",
+    "https://raw.githubusercontent.com/Thordata/awesome-free-proxy-list/main/proxies/socks5.txt": "thordata_s5",
+    # ── BlackSnowDot ─────────────────────────────────────────────────────────
+    "https://raw.githubusercontent.com/BlackSnowDot/proxylist-update-every-minute/main/http.txt":  "blacksnow_http",
+    "https://raw.githubusercontent.com/BlackSnowDot/proxylist-update-every-minute/main/socks.txt": "blacksnow_socks",
+    # ── vmheaven ─────────────────────────────────────────────────────────────
+    "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/refs/heads/main/http.txt":   "vmheaven_http",
+    "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/refs/heads/main/https.txt":  "vmheaven_http",
+    "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/refs/heads/main/socks4.txt": "vmheaven_s4",
+    "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/refs/heads/main/socks5.txt": "vmheaven_s5",
+    # ── officialputuid/ProxyForEveryone ──────────────────────────────────────
+    "https://raw.githubusercontent.com/officialputuid/ProxyForEveryone/main/http/http.txt":    "proxyforall_http",
+    "https://raw.githubusercontent.com/officialputuid/ProxyForEveryone/main/https/https.txt":  "proxyforall_http",
+    "https://raw.githubusercontent.com/officialputuid/ProxyForEveryone/main/socks4/socks4.txt":"proxyforall_s4",
+    "https://raw.githubusercontent.com/officialputuid/ProxyForEveryone/main/socks5/socks5.txt":"proxyforall_s5",
+    # ── fyvri/fresh-proxy-list ───────────────────────────────────────────────
+    "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/http.txt":   "fyvri_http",
+    "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/https.txt":  "fyvri_http",
+    "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/socks4.txt": "fyvri_s4",
+    "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/socks5.txt": "fyvri_s5",
+    # ── ebrasha/abdal-proxy-hub ──────────────────────────────────────────────
+    "https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/main/http-proxy-list-by-EbraSha.txt":   "abdal_http",
+    "https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/main/https-proxy-list-by-EbraSha.txt":  "abdal_http",
+    "https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/main/socks4-proxy-list-by-EbraSha.txt": "abdal_s4",
+    "https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/main/socks5-proxy-list-by-EbraSha.txt": "abdal_s5",
+    # ── iplocate/free-proxy-list ─────────────────────────────────────────────
+    "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/http.txt":   "iplocate_http",
+    "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/socks4.txt": "iplocate_s4",
+    "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/socks5.txt": "iplocate_s5",
+    # ── databay-labs/free-proxy-list ─────────────────────────────────────────
+    "https://raw.githubusercontent.com/databay-labs/free-proxy-list/master/http.txt":   "databayl_http",
+    "https://raw.githubusercontent.com/databay-labs/free-proxy-list/master/socks4.txt": "databayl_s4",
+    "https://raw.githubusercontent.com/databay-labs/free-proxy-list/master/socks5.txt": "databayl_s5",
+    # ── gitrecon1455/fresh-proxy-list ────────────────────────────────────────
+    "https://raw.githubusercontent.com/gitrecon1455/fresh-proxy-list/main/proxylist.txt": "gitrecon_all",
+    # ── dinoz0rg/proxy-list ──────────────────────────────────────────────────
+    "https://raw.githubusercontent.com/dinoz0rg/proxy-list/main/checked_proxies/http.txt":   "dinoz_http",
+    "https://raw.githubusercontent.com/dinoz0rg/proxy-list/main/checked_proxies/socks5.txt": "dinoz_s5",
+    # ── Skillter/ProxyGather ─────────────────────────────────────────────────
+    "https://raw.githubusercontent.com/Skillter/ProxyGather/refs/heads/master/proxies/working-proxies-http.txt":  "skillter_http",
+    "https://raw.githubusercontent.com/Skillter/ProxyGather/refs/heads/master/proxies/working-proxies-socks5.txt":"skillter_s5",
+    # ── stormsia/proxy-list ──────────────────────────────────────────────────
+    "https://raw.githubusercontent.com/stormsia/proxy-list/main/working_proxies.txt": "stormsia_all",
+    # ── ZaidGuy/proxy-list-1 ─────────────────────────────────────────────────
+    "https://raw.githubusercontent.com/ZaidGuy/proxy-list-1/main/online-proxies/txt/proxies-http.txt":   "zaid_http",
+    "https://raw.githubusercontent.com/ZaidGuy/proxy-list-1/main/online-proxies/txt/proxies-socks5.txt": "zaid_s5",
 }
 
 SOURCES = [
@@ -445,6 +509,66 @@ SOURCES = [
     ("socks5", "https://raw.githubusercontent.com/roma8ok/proxy-list/main/proxy-list-socks5.txt"),
     # ── sunny9577 combined proxies.txt (1513 IPs all protocols) ──────────────
     ("http",   "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/proxies.txt"),
+    # ── VPSLabCloud — every 15 min ────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/http_all.txt"),
+    ("socks4", "https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/socks4_all.txt"),
+    ("socks5", "https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/socks5_all.txt"),
+    # ── gfpcom — 1.5M proxies, every 30 min (wiki storage) ───────────────────
+    ("http",   "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/socks5.txt"),
+    # ── ClearProxy — verified every 5 min ────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/ClearProxy/checked-proxy-list/main/http/raw/all.txt"),
+    ("socks4", "https://raw.githubusercontent.com/ClearProxy/checked-proxy-list/main/socks4/raw/all.txt"),
+    ("socks5", "https://raw.githubusercontent.com/ClearProxy/checked-proxy-list/main/socks5/raw/all.txt"),
+    # ── Thordata — auto-verified ──────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/Thordata/awesome-free-proxy-list/main/proxies/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/Thordata/awesome-free-proxy-list/main/proxies/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/Thordata/awesome-free-proxy-list/main/proxies/socks5.txt"),
+    # ── BlackSnowDot — every minute ───────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/BlackSnowDot/proxylist-update-every-minute/main/http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/BlackSnowDot/proxylist-update-every-minute/main/socks.txt"),
+    # ── vmheaven — 10k+ HTTP, every 15 min ────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/refs/heads/main/http.txt"),
+    ("http",   "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/refs/heads/main/https.txt"),
+    ("socks4", "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/refs/heads/main/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/refs/heads/main/socks5.txt"),
+    # ── officialputuid/ProxyForEveryone — 10k+ HTTP + SOCKS5 ──────────────────
+    ("http",   "https://raw.githubusercontent.com/officialputuid/ProxyForEveryone/main/http/http.txt"),
+    ("http",   "https://raw.githubusercontent.com/officialputuid/ProxyForEveryone/main/https/https.txt"),
+    ("socks4", "https://raw.githubusercontent.com/officialputuid/ProxyForEveryone/main/socks4/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/officialputuid/ProxyForEveryone/main/socks5/socks5.txt"),
+    # ── fyvri/fresh-proxy-list — 10k+ SOCKS5, hourly (archive branch) ─────────
+    ("http",   "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/http.txt"),
+    ("http",   "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/https.txt"),
+    ("socks4", "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/socks5.txt"),
+    # ── ebrasha/abdal-proxy-hub — 5k+ HTTP + SOCKS5, every 10 min ────────────
+    ("http",   "https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/main/http-proxy-list-by-EbraSha.txt"),
+    ("http",   "https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/main/https-proxy-list-by-EbraSha.txt"),
+    ("socks4", "https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/main/socks4-proxy-list-by-EbraSha.txt"),
+    ("socks5", "https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/main/socks5-proxy-list-by-EbraSha.txt"),
+    # ── iplocate/free-proxy-list — 10k+ SOCKS5, every 30 min ─────────────────
+    ("http",   "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/socks5.txt"),
+    # ── databay-labs/free-proxy-list — 5k+ HTTP, every 5 min ─────────────────
+    ("http",   "https://raw.githubusercontent.com/databay-labs/free-proxy-list/master/http.txt"),
+    ("socks4", "https://raw.githubusercontent.com/databay-labs/free-proxy-list/master/socks4.txt"),
+    ("socks5", "https://raw.githubusercontent.com/databay-labs/free-proxy-list/master/socks5.txt"),
+    # ── gitrecon1455/fresh-proxy-list — 8k+ mixed, every 10 min ──────────────
+    ("http",   "https://raw.githubusercontent.com/gitrecon1455/fresh-proxy-list/main/proxylist.txt"),
+    # ── dinoz0rg/proxy-list — checked proxies ─────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/dinoz0rg/proxy-list/main/checked_proxies/http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/dinoz0rg/proxy-list/main/checked_proxies/socks5.txt"),
+    # ── Skillter/ProxyGather — verified every 30 min ──────────────────────────
+    ("http",   "https://raw.githubusercontent.com/Skillter/ProxyGather/refs/heads/master/proxies/working-proxies-http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/Skillter/ProxyGather/refs/heads/master/proxies/working-proxies-socks5.txt"),
+    # ── stormsia/proxy-list — protocol:// prefix format ───────────────────────
+    ("http",   "https://raw.githubusercontent.com/stormsia/proxy-list/main/working_proxies.txt"),
+    # ── ZaidGuy/proxy-list-1 ──────────────────────────────────────────────────
+    ("http",   "https://raw.githubusercontent.com/ZaidGuy/proxy-list-1/main/online-proxies/txt/proxies-http.txt"),
+    ("socks5", "https://raw.githubusercontent.com/ZaidGuy/proxy-list-1/main/online-proxies/txt/proxies-socks5.txt"),
 ]
 
 # ── Additional live API sources (fetched directly, not from GitHub) ─────────
@@ -504,6 +628,35 @@ def _fetch_fate0():
         return out
     except Exception:
         return []
+
+
+def _fetch_hidemium():
+    """hidemium.io — 78 proxies as escaped JSON in page HTML."""
+    import re as _re
+    out = []
+    try:
+        body = _http_get("https://hidemium.io/free-proxy/", 15)
+        addrs  = _re.findall(r'\\\\\"address\\\\\":\\\\\"([\d.:]+)\\\\\"', body)
+        protos = _re.findall(r'\\\\\"protocols\\\\\":\[\\\\\"([a-z0-9]+)\\\\\"', body)
+        for addr, proto in zip(addrs, protos):
+            scheme = "socks5" if proto == "socks5" else "socks4" if proto == "socks4" else "http"
+            if ":" in addr:
+                out.append((scheme, addr))
+    except Exception:
+        pass
+    return out
+
+
+def _fetch_databay():
+    """databay.com free proxy API — verified proxies."""
+    out = []
+    for proto, scheme in (("socks5", "socks5"), ("http", "http"), ("socks4", "socks4")):
+        try:
+            body = _http_get(f"https://databay.com/api/v1/proxy-list?protocol={proto}&format=txt", 20)
+            out.extend(_parse_lines(scheme, body))
+        except Exception:
+            pass
+    return out
 
 
 def _fetch_checkerproxy_keeper():
@@ -893,18 +1046,42 @@ def fetch_candidates(known_addrs):
     except Exception:
         pass
 
-    # free-proxy-list.net /en/ — HTML table, 300 per page, different pool
+    # hidemium.io — 78 verified proxies embedded as JSON in page HTML
+    try:
+        sm.ensure_source("hidemium.io", url="https://hidemium.io/free-proxy/", scheme="mixed", category="api")
+        hm = _fetch_hidemium()
+        for s, a in hm:
+            candidates.append((s, a, "hidemium.io"))
+        if hm:
+            sm.record_harvest("hidemium.io", len(hm))
+        log(f"  hidemium.io: {len(hm)} candidates")
+    except Exception:
+        pass
+
+    # databay.com — live verified proxy API
+    try:
+        sm.ensure_source("databay.com", url="https://databay.com/api/v1/proxy-list", scheme="mixed", category="api")
+        db = _fetch_databay()
+        for s, a in db:
+            candidates.append((s, a, "databay.com"))
+        if db:
+            sm.record_harvest("databay.com", len(db))
+        log(f"  databay.com: {len(db)} candidates")
+    except Exception:
+        pass
+
+    # free-proxy-list.net /en/ — HTML table, up to 100 pages
     sm.ensure_source("freeproxylist", url="https://free-proxy-list.net/en/", scheme="http", category="api")
+    import re as _re
     _fpl_count = 0
-    for url in [
-        "https://free-proxy-list.net/en/",
-        "https://free-proxy-list.net/en/?page=2",
-        "https://free-proxy-list.net/en/?page=3",
-        "https://free-proxy-list.net/anonymous-proxy.html",
-    ]:
+    for _fpl_url in (
+        ["https://free-proxy-list.net/en/"]
+        + [f"https://free-proxy-list.net/en/?page={p}" for p in range(2, 101)]
+        + ["https://free-proxy-list.net/anonymous-proxy.html"]
+    ):
+        _prev = _fpl_count
         try:
-            body = _http_get(url, 15)
-            import re as _re
+            body = _http_get(_fpl_url, 15)
             pairs = _re.findall(
                 r"<td>\s*(\d{1,3}(?:\.\d{1,3}){3})\s*</td>\s*<td>\s*(\d{2,5})\s*</td>",
                 body)
@@ -912,7 +1089,9 @@ def fetch_candidates(known_addrs):
                 candidates.append(("http", f"{ip}:{port}", "freeproxylist"))
                 _fpl_count += 1
         except Exception:
-            pass
+            break
+        if _fpl_count == _prev and _fpl_url != "https://free-proxy-list.net/anonymous-proxy.html":
+            break
     if _fpl_count:
         sm.record_harvest("freeproxylist", _fpl_count)
     log(f"  free-proxy-list.net/en/: scraped ({_fpl_count} found)")
@@ -943,24 +1122,21 @@ def _get_probe_url(targets):
     return f"{YNET_BASE}/iphone/json/api/talkbacks/list/v2/{article_id}/0/1"
 
 
-def probe_one(scheme, addr, targets, used_addrs):
-    """
-    Test a proxy by GETting the Ynet talkback list endpoint.
-
-    Using GET instead of POST (vote) preserves all vote capacity for actual use.
-    A proxy that can GET the talkback API almost certainly can POST votes too.
-    Yield improves from ~0.3% (vote) to ~2-5% (GET reachability).
-
-    Returns a record dict if the proxy reached Ynet, None on connection failure.
-    """
+async def _probe_one_async(scheme, addr, targets, used_addrs):
     proxy_url = f"{scheme}://{addr}"
-    proxies   = {"http": proxy_url, "https": proxy_url}
-    url       = _get_probe_url(targets)
-
+    url = _get_probe_url(targets)
     t0 = time.time()
+    timeout = aiohttp.ClientTimeout(total=PROBE_TIMEOUT)
     try:
-        r = req_lib.get(url, headers=HEADERS, proxies=proxies, timeout=PROBE_TIMEOUT)
-        ms = int((time.time() - t0) * 1000)
+        if scheme in ("socks4", "socks5"):
+            connector = _ProxyConnector.from_url(proxy_url, rdns=True)
+            async with aiohttp.ClientSession(connector=connector) as sess:
+                async with sess.get(url, headers=HEADERS, timeout=timeout) as r:
+                    ms = int((time.time() - t0) * 1000)
+        else:
+            async with aiohttp.ClientSession() as sess:
+                async with sess.get(url, headers=HEADERS, proxy=proxy_url, timeout=timeout) as r:
+                    ms = int((time.time() - t0) * 1000)
         return {
             "scheme":       scheme,
             "addr":         addr,
@@ -972,35 +1148,29 @@ def probe_one(scheme, addr, targets, used_addrs):
         return None
 
 
-def probe_all(candidates, targets, used_addrs, on_flush, prev_alive=None):
-    """
-    Probe all candidates with a thread pool.
-    Calls on_flush(hits, tested_addrs, prev_alive) every FLUSH_EVERY hits.
-    hits = proxies that reached Ynet (any HTTP response, regardless of vote_ok).
-    tested_addrs = every address probed so far (hit or miss).
-    candidates = list of (scheme, addr, source_key) 3-tuples.
-    """
+async def _probe_async(candidates, targets, used_addrs, on_flush, prev_alive):
     hits = []
     tested_addrs = set()
     done = 0
-    total = len(candidates)
     last_flush = 0
-    lock = __import__("threading").Lock()
+    total = len(candidates)
+    semaphore = asyncio.Semaphore(ASYNC_CONCURRENCY)
+    lock = asyncio.Lock()
+    loop = asyncio.get_event_loop()
 
-    def _probe(item):
+    async def _task(scheme, addr, src_key):
         nonlocal done, last_flush
-        scheme, addr, src_key = item
-        rec = probe_one(scheme, addr, targets, used_addrs)
-        with lock:
-            done_val = done + 1
-            done = done_val
+        async with semaphore:
+            rec = await _probe_one_async(scheme, addr, targets, used_addrs)
+
+        flush_args = None
+        async with lock:
+            done += 1
             tested_addrs.add(addr)
             if rec:
-                # Tag probe result with the source key from fetch
                 if not rec.get("source") and src_key:
                     rec["source"] = src_key
                 hits.append(rec)
-                # Record probe hit for source quality tracking
                 effective_src = rec.get("source") or src_key
                 if effective_src:
                     try:
@@ -1009,15 +1179,25 @@ def probe_all(candidates, targets, used_addrs, on_flush, prev_alive=None):
                         pass
                 if len(hits) - last_flush >= FLUSH_EVERY:
                     last_flush = len(hits)
-                    on_flush(list(hits), set(tested_addrs), prev_alive)
-            if done_val % 500 == 0 or done_val == total:
+                    flush_args = (list(hits), set(tested_addrs), prev_alive)
+            if done % 500 == 0 or done == total:
                 vote_ok = sum(1 for h in hits if h.get("vote_ok"))
-                log(f"  probed {done_val}/{total}  reachable: {len(hits)}  vote_ok: {vote_ok}")
+                log(f"  probed {done}/{total}  reachable: {len(hits)}  vote_ok: {vote_ok}")
 
-    with ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        list(ex.map(_probe, candidates))
+        if flush_args:
+            await loop.run_in_executor(None, on_flush, *flush_args)
 
+    await asyncio.gather(*[_task(s, a, src) for s, a, src in candidates])
     return hits, tested_addrs
+
+
+def probe_all(candidates, targets, used_addrs, on_flush, prev_alive=None):
+    """
+    Probe all candidates concurrently via asyncio (ASYNC_CONCURRENCY=1500).
+    Calls on_flush(hits, tested_addrs, prev_alive) every FLUSH_EVERY hits.
+    candidates = list of (scheme, addr, source_key) 3-tuples.
+    """
+    return asyncio.run(_probe_async(candidates, targets, used_addrs, on_flush, prev_alive))
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -1204,7 +1384,13 @@ def run_cycle(cycle_num):
             # Ensure source is never lost — original wins if probe result has none
             if p.get("source") and not hit_map[p["addr"]].get("source"):
                 merged_entry["source"] = p["source"]
+            merged_entry["failures"] = 0  # reset on success
             kept.append(merged_entry)
+        else:
+            # Failed this probe — need 110 consecutive failures before removal
+            fail_count = p.get("failures", 0) + 1
+            if fail_count < 110:
+                kept.append({**p, "failures": fail_count})
 
     new_entries = [h for h in hits if h["addr"] not in known_addrs]
     # Ensure every new entry has a source tag — use specific URL source if set,

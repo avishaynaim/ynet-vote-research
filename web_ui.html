@@ -273,6 +273,13 @@
     .camp-ok     { color: #4ade80; }
     .camp-sent   { color: var(--muted); }
     .camp-countdown { color: #f59e0b; font-size: .75rem; margin-top: 4px; }
+    .btn-stop {
+      background: #7f1d1d; color: #f87171; border: 1px solid #991b1b;
+      border-radius: 5px; padding: 3px 9px; font-size: .72rem; font-weight: 700;
+      cursor: pointer; transition: background .15s; white-space: nowrap; flex-shrink: 0;
+    }
+    .btn-stop:hover:not(:disabled) { background: #991b1b; }
+    .btn-stop:disabled { opacity: .5; cursor: not-allowed; }
 
     /* ── Toast notifications ── */
     #toastContainer { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column-reverse; gap: 8px; pointer-events: none; }
@@ -1124,6 +1131,8 @@ async function _pollCampaign(campId, card, like, prevState) {
       card.className = 'camp-card camp-done';
       if (elLbl) elLbl.textContent = `Done — ${camp.total_ok}/${camp.total_sent} accepted`;
       if (elBar) { elBar.style.width = '100%'; elBar.style.background = '#22c55e'; }
+      const stopBtn = card.querySelector('.btn-stop');
+      if (stopBtn) stopBtn.style.display = 'none';
       clearInterval(_campaignPollers[campId]);
       delete _campaignPollers[campId];
       showToast('done', `Done`,
@@ -1137,6 +1146,8 @@ async function _pollCampaign(campId, card, like, prevState) {
     } else if (camp.status === 'error' || camp.status === 'cancelled') {
       card.className = 'camp-card camp-error';
       if (elLbl) elLbl.textContent = camp.error || camp.status;
+      const stopBtn = card.querySelector('.btn-stop');
+      if (stopBtn) stopBtn.style.display = 'none';
       clearInterval(_campaignPollers[campId]);
       delete _campaignPollers[campId];
     }
@@ -1163,7 +1174,8 @@ async function vote(like) {
       <span class="camp-icon">${like ? '👍' : '👎'}</span>
       <span class="camp-tid">#${talkbackId}</span>
       <span class="camp-lbl">Starting…</span>
-      <button class="camp-close" title="Cancel & dismiss">×</button>
+      <button class="btn-stop">⏹ Stop</button>
+      <button class="camp-close" title="Dismiss">×</button>
     </div>
     <div class="progress-outer"><div class="progress-inner"></div></div>
     <div class="camp-stats"><span class="camp-sent">Queuing proxies…</span></div>`;
@@ -1191,6 +1203,24 @@ async function vote(like) {
 
   showToast(like ? 'like' : 'dislike', `Campaign started`,
     `${like ? '👍' : '👎'} #${talkbackId} · ${count || 'all fresh'} proxies · single pass`);
+
+  card.querySelector('.btn-stop').addEventListener('click', async () => {
+    const stopBtn = card.querySelector('.btn-stop');
+    stopBtn.disabled = true;
+    stopBtn.textContent = 'Stopping…';
+    if (campId) {
+      try { await fetch(`${SERVER_BASE}/vote/campaign/${campId}`, { method: 'DELETE' }); } catch {}
+      await _pollCampaign(campId, card, like, null);
+    }
+    card.className = 'camp-card camp-error';
+    const lbl = card.querySelector('.camp-lbl');
+    if (lbl) lbl.textContent = 'Stopped';
+    stopBtn.style.display = 'none';
+    clearInterval(_campaignPollers[campId]);
+    delete _campaignPollers[campId];
+    addLog('action', `Stopped campaign #${campId}`);
+    setTimeout(() => _removeCampCard(card, campId), 8_000);
+  });
 
   card.querySelector('.camp-close').addEventListener('click', async () => {
     if (campId) {

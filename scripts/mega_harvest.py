@@ -53,7 +53,16 @@ HEADERS  = {
     "Origin":     "https://www.ynet.co.il",
     "Referer":    "https://www.ynet.co.il/news/article/yokra14737379",
 }
-UA_FETCH = {"User-Agent": "Mozilla/5.0 (compatible; proxy-harvest/3.0)"}
+_UA_POOL = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+]
+import random as _random_mod
+def _ua(): return {"User-Agent": _random_mod.choice(_UA_POOL)}
+UA_FETCH = _ua()   # kept for legacy references; http_get() picks a fresh one per call
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -316,6 +325,63 @@ GITHUB_SOURCES = [
     ("zevty_all",      "http",   "https://raw.githubusercontent.com/zevtyardt/proxy-list/main/all.txt"),
     # ── hendrikbgr extra ──
     ("hendrik3_http",  "http",   "https://raw.githubusercontent.com/hendrikbgr/Free-Proxy-Repo/master/proxy_list.txt"),
+    # ── VPSLabCloud — every 15 min ──
+    ("vpslab_http",    "http",   "https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/http_all.txt"),
+    ("vpslab_s4",      "socks4", "https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/socks4_all.txt"),
+    ("vpslab_s5",      "socks5", "https://raw.githubusercontent.com/VPSLabCloud/VPSLab-Free-Proxy-List/main/socks5_all.txt"),
+    # ── gfpcom — 2M+ proxies, every 30 min (wiki storage) ──
+    ("gfpcom_http",    "http",   "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/http.txt"),
+    ("gfpcom_s4",      "socks4", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/socks4.txt"),
+    ("gfpcom_s5",      "socks5", "https://raw.githubusercontent.com/wiki/gfpcom/free-proxy-list/lists/socks5.txt"),
+    # ── ClearProxy — verified every 5 min (checked to Google/Discord/etc.) ──
+    ("clearproxy_http","http",   "https://raw.githubusercontent.com/ClearProxy/checked-proxy-list/main/http/raw/all.txt"),
+    ("clearproxy_s4",  "socks4", "https://raw.githubusercontent.com/ClearProxy/checked-proxy-list/main/socks4/raw/all.txt"),
+    ("clearproxy_s5",  "socks5", "https://raw.githubusercontent.com/ClearProxy/checked-proxy-list/main/socks5/raw/all.txt"),
+    # ── Thordata awesome-free-proxy-list — auto-verified via GitHub Actions ──
+    ("thordata_http",  "http",   "https://raw.githubusercontent.com/Thordata/awesome-free-proxy-list/main/proxies/http.txt"),
+    ("thordata_s4",    "socks4", "https://raw.githubusercontent.com/Thordata/awesome-free-proxy-list/main/proxies/socks4.txt"),
+    ("thordata_s5",    "socks5", "https://raw.githubusercontent.com/Thordata/awesome-free-proxy-list/main/proxies/socks5.txt"),
+    # ── vmheaven — 10k+ HTTP, every 15 min ──
+    ("vmheaven_http",  "http",   "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/refs/heads/main/http.txt"),
+    ("vmheaven_https", "http",   "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/refs/heads/main/https.txt"),
+    ("vmheaven_s4",    "socks4", "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/refs/heads/main/socks4.txt"),
+    ("vmheaven_s5",    "socks5", "https://raw.githubusercontent.com/vmheaven/VMHeaven-Free-Proxy-Updated/refs/heads/main/socks5.txt"),
+    # ── officialputuid/ProxyForEveryone — 10k+ HTTP + SOCKS5, regularly updated ──
+    ("proxyforall_http","http",  "https://raw.githubusercontent.com/officialputuid/ProxyForEveryone/main/http/http.txt"),
+    ("proxyforall_https","http", "https://raw.githubusercontent.com/officialputuid/ProxyForEveryone/main/https/https.txt"),
+    ("proxyforall_s4", "socks4", "https://raw.githubusercontent.com/officialputuid/ProxyForEveryone/main/socks4/socks4.txt"),
+    ("proxyforall_s5", "socks5", "https://raw.githubusercontent.com/officialputuid/ProxyForEveryone/main/socks5/socks5.txt"),
+    # ── fyvri/fresh-proxy-list — 10k+ SOCKS5, hourly (archive branch) ──
+    ("fyvri_http",     "http",   "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/http.txt"),
+    ("fyvri_https",    "http",   "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/https.txt"),
+    ("fyvri_s4",       "socks4", "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/socks4.txt"),
+    ("fyvri_s5",       "socks5", "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/archive/storage/classic/socks5.txt"),
+    # ── ebrasha/abdal-proxy-hub — 5k+ HTTP + SOCKS5, every 10 min ──
+    ("abdal_http",     "http",   "https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/main/http-proxy-list-by-EbraSha.txt"),
+    ("abdal_https",    "http",   "https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/main/https-proxy-list-by-EbraSha.txt"),
+    ("abdal_s4",       "socks4", "https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/main/socks4-proxy-list-by-EbraSha.txt"),
+    ("abdal_s5",       "socks5", "https://raw.githubusercontent.com/ebrasha/abdal-proxy-hub/main/socks5-proxy-list-by-EbraSha.txt"),
+    # ── iplocate/free-proxy-list — 10k+ SOCKS5, every 30 min ──
+    ("iplocate_http",  "http",   "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/http.txt"),
+    ("iplocate_s4",    "socks4", "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/socks4.txt"),
+    ("iplocate_s5",    "socks5", "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/protocols/socks5.txt"),
+    # ── databay-labs/free-proxy-list — 5k+ HTTP, every 5 min ──
+    ("databayl_http",  "http",   "https://raw.githubusercontent.com/databay-labs/free-proxy-list/master/http.txt"),
+    ("databayl_s4",    "socks4", "https://raw.githubusercontent.com/databay-labs/free-proxy-list/master/socks4.txt"),
+    ("databayl_s5",    "socks5", "https://raw.githubusercontent.com/databay-labs/free-proxy-list/master/socks5.txt"),
+    # ── gitrecon1455/fresh-proxy-list — 8k+ mixed, every 10 min ──
+    ("gitrecon_all",   "http",   "https://raw.githubusercontent.com/gitrecon1455/fresh-proxy-list/main/proxylist.txt"),
+    # ── dinoz0rg/proxy-list — checked proxies only ──
+    ("dinoz_http",     "http",   "https://raw.githubusercontent.com/dinoz0rg/proxy-list/main/checked_proxies/http.txt"),
+    ("dinoz_s5",       "socks5", "https://raw.githubusercontent.com/dinoz0rg/proxy-list/main/checked_proxies/socks5.txt"),
+    # ── Skillter/ProxyGather — verified every 30 min via Actions ──
+    ("skillter_http",  "http",   "https://raw.githubusercontent.com/Skillter/ProxyGather/refs/heads/master/proxies/working-proxies-http.txt"),
+    ("skillter_s5",    "socks5", "https://raw.githubusercontent.com/Skillter/ProxyGather/refs/heads/master/proxies/working-proxies-socks5.txt"),
+    # ── stormsia/proxy-list — protocol:// prefix format (handled by parse_lines) ──
+    ("stormsia_all",   "http",   "https://raw.githubusercontent.com/stormsia/proxy-list/main/working_proxies.txt"),
+    # ── ZaidGuy/proxy-list-1 ──
+    ("zaid_http",      "http",   "https://raw.githubusercontent.com/ZaidGuy/proxy-list-1/main/online-proxies/txt/proxies-http.txt"),
+    ("zaid_s5",        "socks5", "https://raw.githubusercontent.com/ZaidGuy/proxy-list-1/main/online-proxies/txt/proxies-socks5.txt"),
 ]
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -323,7 +389,7 @@ GITHUB_SOURCES = [
 # ═══════════════════════════════════════════════════════════════════════════
 
 def http_get(url, timeout=30):
-    req = urllib.request.Request(url, headers=UA_FETCH)
+    req = urllib.request.Request(url, headers=_ua())
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read().decode(errors="replace")
 
@@ -401,6 +467,15 @@ def fetch_proxyscrape_api():
                    f"?request=getproxies&protocol={proto}"
                    f"&timeout=5000&country=all&ssl=all&anonymity=elite")
             body = http_get(url, 20)
+            out.extend(parse_lines(proto, body))
+        except Exception:
+            pass
+        # v4 API endpoint (new, distinct pool)
+        try:
+            url = (f"https://api.proxyscrape.com/v4/free-proxy-list/get"
+                   f"?request=display_proxies&proxy_format=ipport&format=text"
+                   f"&protocol={proto}&timeout=10000")
+            body = http_get(url, 30)
             out.extend(parse_lines(proto, body))
         except Exception:
             pass
@@ -714,13 +789,16 @@ def fetch_proxydb():
     for proto, scheme in (("http&anonimity=elite,anonymous", "http"),
                           ("socks5", "socks5"),
                           ("socks4&anonimity=elite,anonymous", "socks4")):
-        for offset in (0, 15, 30):
+        for offset in range(0, 1500, 15):
+            prev = len(out)
             try:
                 url = f"https://proxydb.net/?protocol={proto}&offset={offset}"
                 body = http_get(url, 15)
                 _extract(body, scheme)
             except Exception:
-                pass
+                break
+            if len(out) == prev:
+                break
     return out
 
 
@@ -788,7 +866,8 @@ def fetch_freeproxyworld():
     TD_RE   = re.compile(r"<td[^>]*>(.*?)</td>", re.DOTALL)
     seen = set()
     for scheme, ptype in [("http", "http"), ("socks5", "socks5"), ("socks4", "socks4")]:
-        for page in range(1, 6):
+        for page in range(1, 101):
+            prev = len(out)
             try:
                 body = http_get(
                     f"https://freeproxy.world/?type={ptype}&page={page}", 15)
@@ -805,7 +884,92 @@ def fetch_freeproxyworld():
                             seen.add(addr)
                             out.append((scheme, addr))
             except Exception:
+                break
+            if len(out) == prev:
+                break
+    return out
+
+
+def fetch_databay_api():
+    """databay.com free proxy API — 5,700+ live verified proxies, updated every 5 min."""
+    out = []
+    for proto, scheme in (("socks5", "socks5"), ("socks4", "socks4"), ("http", "http")):
+        for speed in ("", "&speed=fast"):
+            try:
+                url = f"https://databay.com/api/v1/proxy-list?protocol={proto}&format=txt{speed}"
+                body = http_get(url, 20)
+                out.extend(parse_lines(scheme, body))
+            except Exception:
                 pass
+    return out
+
+
+def fetch_sockslist():
+    """sockslist.us — SOCKS5 proxies checked every minute."""
+    out = []
+    try:
+        body = http_get(
+            "https://sockslist.us/Api?request=getproxies&proxytype=5&country=all&need=0&format=txt",
+            20)
+        out.extend(parse_lines("socks5", body))
+    except Exception:
+        pass
+    try:
+        body = http_get(
+            "https://sockslist.us/Api?request=getproxies&proxytype=4&country=all&need=0&format=txt",
+            20)
+        out.extend(parse_lines("socks4", body))
+    except Exception:
+        pass
+    return out
+
+
+def fetch_advanced_name():
+    """advanced.name/freeproxy — scraped HTML table proxy list."""
+    out = []
+    IP_PORT_RE = re.compile(r"(\d{1,3}(?:\.\d{1,3}){3}):(\d{2,5})")
+    for ptype, scheme in (("socks5", "socks5"), ("socks4", "socks4"), ("http", "http")):
+        for page in range(1, 101):
+            prev = len(out)
+            try:
+                url = f"https://advanced.name/freeproxy?type={ptype}&page={page}"
+                body = http_get(url, 15)
+                for ip, port in IP_PORT_RE.findall(body):
+                    out.append((scheme, f"{ip}:{port}"))
+            except Exception:
+                break
+            if len(out) == prev:
+                break
+    return out
+
+
+def fetch_proxy5_net():
+    """proxy5.net free proxy API."""
+    out = []
+    for ptype, scheme in (("socks5", "socks5"), ("socks4", "socks4"), ("http", "http")):
+        try:
+            body = http_get(f"https://proxy5.net/api/proxy/list?type={ptype}&count=1000&format=txt", 20)
+            out.extend(parse_lines(scheme, body))
+        except Exception:
+            pass
+    return out
+
+
+def fetch_hidemium():
+    """hidemium.io — 78 proxies embedded as JSON in page HTML, updated regularly."""
+    import re as _re
+    out = []
+    try:
+        body = http_get("https://hidemium.io/free-proxy/", 15)
+        # Data is escaped JSON: {\"address\":\"ip:port\",\"protocols\":[\"scheme\"]}
+        addrs   = _re.findall(r'\\\\\"address\\\\\":\\\\\"([\d.:]+)\\\\\"', body)
+        protos  = _re.findall(r'\\\\\"protocols\\\\\":\[\\\\\"([a-z0-9]+)\\\\\"', body)
+        for addr, proto in zip(addrs, protos):
+            scheme = "socks5" if proto in ("socks5",) else "socks4" if proto == "socks4" else "http"
+            if re.match(r"^\d{1,3}(\.\d{1,3}){3}:\d{2,5}$", addr):
+                out.append((scheme, addr))
+    except Exception:
+        pass
     return out
 
 
@@ -840,6 +1004,11 @@ def gather_all(sm=None):
             ("proxyspace.pro",           "https://proxyspace.pro"),
             ("geoxy.io",                 "https://geoxy.io"),
             ("fate0",                    "https://raw.githubusercontent.com/fate0/proxylist/master/proxy.list"),
+            ("databay.com",              "https://databay.com/api/v1/proxy-list"),
+            ("sockslist.us",             "https://sockslist.us/Api"),
+            ("advanced.name",            "https://advanced.name/freeproxy"),
+            ("proxy5.net",               "https://proxy5.net/api/proxy/list"),
+            ("hidemium.io",              "https://hidemium.io/free-proxy/"),
         ]:
             sm.ensure_source(api_name, url=url, scheme="mixed", category="api")
 
@@ -867,6 +1036,11 @@ def gather_all(sm=None):
             ex.submit(fetch_proxyspace_direct):              "proxyspace.pro",
             ex.submit(fetch_geoxy):                          "geoxy.io",
             ex.submit(fetch_fate0):                          "fate0",
+            ex.submit(fetch_databay_api):                    "databay.com",
+            ex.submit(fetch_sockslist):                      "sockslist.us",
+            ex.submit(fetch_advanced_name):                  "advanced.name",
+            ex.submit(fetch_proxy5_net):                     "proxy5.net",
+            ex.submit(fetch_hidemium):                       "hidemium.io",
             ex.submit(fetch_proxyscrape_country, sm): _country_fut_key,
         }
 
@@ -917,7 +1091,7 @@ def gather_all(sm=None):
             "proxyscrape", "geonode", "proxy-list.download",
             "openproxy.space", "freeproxylist.net", "spys.me", "checkerproxy.net",
             "proxydb.net", "proxyscan.io", "freeproxy.world", "proxyspace.pro",
-            "geoxy.io", "fate0",
+            "geoxy.io", "fate0", "databay.com", "sockslist.us", "advanced.name", "proxy5.net", "hidemium.io",
         }
         discovered = [
             (key, info["url"], info.get("scheme", "http"))
